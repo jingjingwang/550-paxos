@@ -41,6 +41,6 @@ public class StateMachine
 	public String getOutput()
 	{
 		// temp
-		return inputs.get(cntInstanceID-1);
+		return inputs.get(cntInstanceID-1) + "\n";
 	}
 }

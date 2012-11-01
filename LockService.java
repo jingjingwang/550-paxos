@@ -27,10 +27,12 @@ public class LockService
 			for (int i = 0; i < numServer; ++i)
 			{
 				for (int t = 0; t < 5; ++t)
+				{
     					if ((line = br[i].readLine()) != null) 
       						System.out.println("[server " + i + "]:\t" + line);
 					else
 						break;
+				}
 			}
 			Thread.sleep(1000);
 		}
