@@ -25,22 +25,22 @@ public class PaxosServer
 	private static int MaxClientNum = 100;
 	private static int cmdLength = 30;
 	private static int numClient = 0;
-	private static Selector selector;
 	public static int numServer;
 	public static int numMajority;
+	private static Selector selector;
 
 	private static boolean distinLearner;
 	private static boolean proposed;
-	private static int numReChosen;
-	private static int numAccepted;
-	private static int numPrepareResponse;
-	private static int highestAcceptedPropNum;
-	private static int highestRespondedPropNum;
-	private static int highestRePrepareNum;
 	private static int cntPropNum = 0;
 	private static int instanceID = 0;
-	private static String highestRePrepareValue;
-	private static String highestAcceptedValue;
+
+	private static ExtendedHashMap<Integer, String> highestRePrepareValue = new ExtendedHashMap<Integer, String>("");
+	private static ExtendedHashMap<Integer, String> highestAcceptedValue = new ExtendedHashMap<Integer, String>("");
+	private static ExtendedHashMap<Integer, Integer> numAccepted = new ExtendedHashMap<Integer, Integer>(0);
+	private static ExtendedHashMap<Integer, Integer> numPrepareResponse = new ExtendedHashMap<Integer, Integer>(0);
+	private static ExtendedHashMap<Integer, Integer> highestAcceptedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
+	private static ExtendedHashMap<Integer, Integer> highestRespondedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
+	private static ExtendedHashMap<Integer, Integer> highestRePrepareNum = new ExtendedHashMap<Integer, Integer>(-1);
 
 	private static StateMachine stateMachine = new StateMachine();
 	private static LinkedList<ClientCommand> clientRequestQueue = new LinkedList<ClientCommand>();
@@ -51,21 +51,10 @@ public class PaxosServer
 	{
 		System.out.println("newRoundInit");
 		distinLearner = false;
-		numReChosen = 0;
-		numAccepted = 0;
-		numPrepareResponse = 0;
-		highestAcceptedPropNum = -1;
-		highestRespondedPropNum = -1;
-		highestRePrepareNum = -1;
 		cntPropNum += (new Random()).nextInt(10) + 1;
 		instanceID ++;
 
-		highestRePrepareValue = "";
-		highestAcceptedValue = "";
 		proposed = false;
-		//stateMachine.clear();
-		//for (int i = 0; i < writeQueue.size(); ++i)
-		//	writeQueue.get(i).clear();
 		tryPropose();
 	}
 
@@ -137,10 +126,10 @@ public class PaxosServer
 
 	public static void registerOtherServers(ServerSocketChannel listenChannel) throws Exception
 	{
-		// 1 - numServer: accept other machine's connection as a server, in charge of writing things
-		// numServer+1 - 2*numServer: connect to another machine as a client, in charge of reading things
+		// 1 - numServer: accept other machine's connection as a server
+		// numServer+1 - 2*numServer: connect to another machine as a client
+		// 2 paths for each pair of servers actually, anyone will work
 		// 2*numServer+1 - __ : clients
-		// need to change the logic later!
 
 		SocketChannel[] toServer = new SocketChannel[numServer];
 		int count1 = 0;
@@ -206,7 +195,6 @@ public class PaxosServer
 
 	private static String readFromClientSocketChannel(SelectionKey key)
 	{
-		
 		try
 		{
 
@@ -257,7 +245,6 @@ public class PaxosServer
 
 	private static String readFromSocketChannel(SelectionKey key) 
 	{
-		
 		try
 		{
 
@@ -396,9 +383,8 @@ public class PaxosServer
 			 		processSelectionKey(selKey);
 				keyIter.remove();
 		    	}
-			//update write op status?
 			System.out.println("------ one selection --------");
-			Thread.sleep(5000);
+			Thread.sleep(7000);
 		}
 		
 		}
@@ -439,31 +425,34 @@ public class PaxosServer
 			*/
 			if (indx <= 2*numServer) // read from another server
 			{
-				int flyingInstanceID = Integer.parseInt(getField(command, -1));
+				int flyingInsID = Integer.parseInt(getField(command, -1));
+				System.out.println("flying instance ID = " + flyingInsID);
+				if (flyingInsID != instanceID)
+					System.out.println("     Some One is Falling Behind!"); 
 				if (command.startsWith("prepare"))
 				{
 					int propNum = Integer.parseInt(getField(command, 1));
-					if (propNum <= highestRespondedPropNum)
+					if (propNum <= highestRespondedPropNum.getInt(flyingInsID))
 						return;
-					highestRespondedPropNum = propNum;
-					addIntoWriteQueue(indx, extendCommand(instanceID, "re-prepare " + highestAcceptedPropNum + " " + highestAcceptedValue));
+					highestRespondedPropNum.put(flyingInsID, propNum);
+					addIntoWriteQueue(indx, extendCommand(instanceID, "re-prepare " + highestAcceptedPropNum.getInt(flyingInsID) + " " + highestAcceptedValue.getStr(flyingInsID)));
 				}
 				else if (command.startsWith("re-prepare"))
 				{
-					numPrepareResponse++;
+					numPrepareResponse.put(flyingInsID, numPrepareResponse.getInt(flyingInsID) + 1);
 					int propNum = Integer.parseInt(getField(command, 1));
-					if (propNum > highestRePrepareNum)
+					if (propNum > highestRePrepareNum.getInt(flyingInsID))
 					{
-						highestRePrepareNum = propNum; 
-						highestRePrepareValue = getField(command, 2); 
+						highestRePrepareNum.put(flyingInsID, propNum);
+						highestRePrepareValue.put(flyingInsID, getField(command, 2)); 
 					}
-					if (numPrepareResponse == numMajority)
+					if (numPrepareResponse.getInt(flyingInsID) == numMajority)
 					{
 						String tmp;
-						if (highestRePrepareValue.equals(""))
+						if (highestRePrepareNum.getInt(flyingInsID) == -1)
 							tmp = extendCommand(instanceID, "accept " + cntPropNum + " " + getCntRequest());
 						else
-							tmp = extendCommand(instanceID, "accept " + cntPropNum + " " + highestRePrepareValue);
+							tmp = extendCommand(instanceID, "accept " + cntPropNum + " " + highestRePrepareValue.get(flyingInsID));
 						for (int i = 1; i <= numServer; ++i)
 							addIntoWriteQueue(i, tmp);
 					}
@@ -471,12 +460,12 @@ public class PaxosServer
 				else if (command.startsWith("accept"))
 				{
 					int propNum = Integer.parseInt(getField(command, 1));
-					if (propNum < highestRespondedPropNum)
+					if (propNum < highestRespondedPropNum.getInt(flyingInsID))
 						addIntoWriteQueue(indx, extendCommand(instanceID, "re-accept rej"));
 					else
 					{
-						highestAcceptedPropNum = propNum;
-						highestAcceptedValue = getField(command, 2);
+						highestAcceptedPropNum.put(flyingInsID, propNum);
+						highestAcceptedValue.put(flyingInsID, getField(command, 2));
 						addIntoWriteQueue(indx, extendCommand(instanceID, "re-accept accept"));
 					}
 				}
@@ -487,8 +476,8 @@ public class PaxosServer
 					}
 					else
 					{
-						numAccepted++;
-						if (numAccepted == numMajority)
+						numAccepted.put(flyingInsID, numAccepted.getInt(flyingInsID) + 1);
+						if (numAccepted.getInt(flyingInsID) == numMajority)
 						{
 							for (int i = 1; i <= numServer; ++i)
 								addIntoWriteQueue(i, extendCommand(instanceID, "chosen " + getCntRequest()));
