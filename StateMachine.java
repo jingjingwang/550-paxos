@@ -22,10 +22,11 @@ public class StateMachine
 		System.out.println("state machine input: " + instanceID + " " + consensus);
 		inputs.put(instanceID, consensus);
 		if (instanceID == cntInstanceID)
-		{
-			++cntInstanceID;
-			// roll the machine()
-		}
+			while (inputs.get(cntInstanceID) != null)
+			{
+				// roll the machine()
+				++cntInstanceID;
+			}
 	}
 
 	public void input(String consensus) // change instanceID!
