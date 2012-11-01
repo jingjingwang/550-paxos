@@ -23,7 +23,7 @@ public class PaxosServer
 	private static int serverID;
 	private static int portBase = 2139;
 	private static int MaxClientNum = 100;
-	private static int cmdLength = 50;
+	private static int cmdLength = 30;
 	private static int numClient = 0;
 	private static Selector selector;
 	public static int numServer;
@@ -398,7 +398,7 @@ public class PaxosServer
 		    	}
 			//update write op status?
 			System.out.println("------ one selection --------");
-			Thread.sleep(10000);
+			Thread.sleep(5000);
 		}
 		
 		}

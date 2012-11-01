@@ -26,11 +26,13 @@ public class LockService
     			String line;
 			for (int i = 0; i < numServer; ++i)
 			{
-				System.out.println("br " + i + " start");
-    				while ((line = br[i].readLine()) != null) 
-      					System.out.println(line);
-				System.out.println("br " + i + " end");
+				for (int t = 0; t < 5; ++t)
+    					if ((line = br[i].readLine()) != null) 
+      						System.out.println("[server " + i + "]:\t" + line);
+					else
+						break;
 			}
+			Thread.sleep(1000);
 		}
 		}
 		catch (Exception e)
