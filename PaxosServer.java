@@ -55,9 +55,6 @@ public class PaxosServer
 		instanceID ++;
 
 		proposed = false;
-		//stateMachine.clear();
-		//for (int i = 0; i < writeQueue.size(); ++i)
-		//	writeQueue.get(i).clear();
 		tryPropose();
 	}
 
@@ -129,10 +126,10 @@ public class PaxosServer
 
 	public static void registerOtherServers(ServerSocketChannel listenChannel) throws Exception
 	{
-		// 1 - numServer: accept other machine's connection as a server, in charge of writing things
-		// numServer+1 - 2*numServer: connect to another machine as a client, in charge of reading things
+		// 1 - numServer: accept other machine's connection as a server
+		// numServer+1 - 2*numServer: connect to another machine as a client
+		// 2 paths for each pair of servers actually, anyone will work
 		// 2*numServer+1 - __ : clients
-		// need to change the logic later!
 
 		SocketChannel[] toServer = new SocketChannel[numServer];
 		int count1 = 0;
@@ -198,7 +195,6 @@ public class PaxosServer
 
 	private static String readFromClientSocketChannel(SelectionKey key)
 	{
-		
 		try
 		{
 
@@ -249,7 +245,6 @@ public class PaxosServer
 
 	private static String readFromSocketChannel(SelectionKey key) 
 	{
-		
 		try
 		{
 
@@ -388,9 +383,8 @@ public class PaxosServer
 			 		processSelectionKey(selKey);
 				keyIter.remove();
 		    	}
-			//update write op status?
 			System.out.println("------ one selection --------");
-			Thread.sleep(5000);
+			Thread.sleep(7000);
 		}
 		
 		}
@@ -433,6 +427,8 @@ public class PaxosServer
 			{
 				int flyingInsID = Integer.parseInt(getField(command, -1));
 				System.out.println("flying instance ID = " + flyingInsID);
+				if (flyingInsID != instanceID)
+					System.out.println("     Some One is Falling Behind!"); 
 				if (command.startsWith("prepare"))
 				{
 					int propNum = Integer.parseInt(getField(command, 1));
