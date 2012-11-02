@@ -568,6 +568,8 @@ public class PaxosServer
 					String propValue = getField(command, 3);
 					if (command.startsWith("re-accept rej"))
 					{
+						//since we're not doing anything, it's possible to avoid sending it in the beginning
+						//good for observation though
 					}
 					else
 					{
@@ -581,19 +583,19 @@ public class PaxosServer
 				{
 					if (Math.random() < ChosenLostRate)
 						return;
+					checkIfAskMissedInstance(flyingInsID);
+
 					String value = getField(command, 1);
 					stateMachine.input(flyingInsID, value);
-					checkIfAskMissedInstance(flyingInsID);
 					checkPendingAnswer();
-					// need to change the logic here! state machine might delay!
+
 					if (flyingInsID > highestInsID)
 						highestInsID = flyingInsID;
 					//if (distinProposer.getInt(flyingInsID) == 1 && sentToClient.getInt(flyingInsID) == 0)
 						//sentToClient.put(flyingInsID, 1);
-					//if (cntInsID == flyingInsID)
 					newRoundInit();
 				}
-				else if (command.startsWith("ask")) // when to send it?  maybe a timeout?
+				else if (command.startsWith("ask")) 
 				{
 					if (Math.random() < AskLostRate)
 						return;
@@ -617,7 +619,7 @@ public class PaxosServer
 					} 
 				}
 			}
-			else // read from a real client, lock & unlock
+			else // read from a real client
 			{
 				if (command.length() > 0)
 					newClientRequest(new ClientCommand(command, selKey));
