@@ -50,7 +50,7 @@ public class PaxosServer
 	private static ExtendedHashMap<Integer, Integer> highestAcceptedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
 	private static ExtendedHashMap<Integer, Integer> highestRespondedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
 	private static ExtendedHashMap<Integer, Integer> highestRePrepareNum = new ExtendedHashMap<Integer, Integer>(-1);
-	private static ExtendedHashMap<Integer, Integer> distinProposer = new ExtendedHashMap<Integer, Integer>(0);
+	//private static ExtendedHashMap<Integer, Integer> distinProposer = new ExtendedHashMap<Integer, Integer>(0);
 	
 	private static StateMachine stateMachine = new StateMachine();
 	private static Selector selector;
@@ -78,7 +78,7 @@ public class PaxosServer
 			// probably a good motivation to seperate 3 roles here
 			numAccepted.put(cntInsID, 0);
 			numPrepareResponse.put(cntInsID, 0);
-			distinProposer.put(cntInsID, 0);
+			//distinProposer.put(cntInsID, 0);
 		}
 		else // has result for this instance already, could go to a new one
 		{
@@ -532,18 +532,12 @@ public class PaxosServer
 					{
 						String tmp;
 						if (highestRePrepareNum.getInt(flyingInsID) == -1)
-						{
 							tmp = extendCommand(flyingInsID, "accept " + propNum + " " + getCntRequest());
-							distinProposer.put(flyingInsID, 1);
-						}
+							//distinProposer.put(flyingInsID, 1);
 						else
-						{
 							tmp = extendCommand(flyingInsID, "accept " + propNum + " " + highestRePrepareValue.getStr(flyingInsID));
-							if (getCntRequest().equals(highestRePrepareValue.getStr(flyingInsID)))
-							{
-								distinProposer.put(flyingInsID, 1);
-							}
-						}
+							//if (getCntRequest().equals(highestRePrepareValue.getStr(flyingInsID)))
+							//	distinProposer.put(flyingInsID, 1);
 
 						for (int i = 1; i <= numServer; ++i)
 							addIntoWriteQueue(i, tmp);
