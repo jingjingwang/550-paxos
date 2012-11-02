@@ -40,7 +40,9 @@ public class StateMachine
 
 	public String getConsensus(int instanceID)
 	{
-		return inputs.get(instanceID);
+		if (inputs.get(instanceID) != null)
+			return inputs.get(instanceID);
+		return "none";
 	}
 
 	public String getOutput()

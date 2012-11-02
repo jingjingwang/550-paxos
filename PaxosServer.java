@@ -23,6 +23,7 @@ public class PaxosServer
 	private static final int portBase = 2139;
 	private static final int MaxClientNum = 100;
 	private static final int cmdLength = 30;
+	private static final int MaxWaitingRound = 5;
 	private static final double GeneralLostRate = -1;
 	private static final double PrepareLostRate = GeneralLostRate;
 	private static final double RePrepareLostRate = GeneralLostRate;
@@ -67,6 +68,15 @@ public class PaxosServer
 
 		proposed = false;
 		tryPropose();
+
+		if (cntInsID - stateMachine.nextProcessInsID >= MaxWaitingRound)
+		{
+			System.out.println("asking from " + stateMachine.nextProcessInsID + " to " + (cntInsID-1));
+			for (int i = stateMachine.nextProcessInsID; i < cntInsID; ++i)
+				if (stateMachine.getConsensus(i).equals("none"))
+					for (int j = 1; j < numServer; ++j)
+						addIntoWriteQueue(j, extendCommand(cntInsID, "ask " + i));
+		}
 	}
 
 	public static String getCntRequest()
@@ -84,7 +94,7 @@ public class PaxosServer
 		System.out.println("tryPropose");
 		if (clientRequestQueue.size() > 0)
 		{
-			System.out.println("has sth, goint to propose");
+			System.out.println("has sth, going to propose");
 			proposed = true;
 			for (int i = 1; i <= numServer; ++i)
 				addIntoWriteQueue(i, extendCommand(cntInsID, "prepare " + cntPropNum + " " + getCntRequest()));
@@ -425,15 +435,7 @@ public class PaxosServer
 			else
 				command = readFromClientSocketChannel(selKey);
 			System.out.println("readable " + command);
-			/*
-			if (flyingInstanceID != cntInsID)
-			{
-				for (int i = 1; i <= numServer; ++i)
-					for (int j = stateMachine.instanceID; j < flyingInstanceID; ++j)
-						writeQueue.get(i).add(extendCommand(stateMachine.instanceID, "ask " + j));
-				return;
-			}
-			*/
+
 			if (indx <= 2*numServer) // read from another server
 			{
 				int flyingInsID = Integer.parseInt(getField(command, -1));

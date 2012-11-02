@@ -17,6 +17,7 @@ telnet 127.0.0.1 2139
 
 then type command. Each command ends with a carriage return, 13 & 10 in telnet. 
 currently command length should be smaller than 30 (another hardcoded arguments)
+no space please
 
 
 *state machine
