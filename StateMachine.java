@@ -3,6 +3,7 @@ import java.util.HashMap;
 public class StateMachine
 {
 	public int nextProcessInsID = 1; 
+	private int highestInsID = 0; 
 
 	HashMap<Integer, String> inputs;
 
@@ -11,17 +12,11 @@ public class StateMachine
 		inputs = new HashMap<Integer, String>();
 	}
 
-	/*
-	public void clear()
-	{
-		nextProcessInsID = 1;
-		inputs.clear();
-	}
-	*/
-
 	public void input(int instanceID, String consensus) 
 	{
-		System.out.println("state machine input: " + instanceID + " " + consensus);
+		System.out.println("   state machine input: " + instanceID + " " + consensus);
+		if (instanceID > highestInsID)
+			highestInsID = instanceID;
 		inputs.put(instanceID, consensus);
 		if (instanceID == nextProcessInsID)
 			while (inputs.get(nextProcessInsID) != null)
@@ -29,14 +24,11 @@ public class StateMachine
 				// roll the machine()
 				++nextProcessInsID;
 			}
+		System.out.println("   highest " + highestInsID + " nextProcessID " + nextProcessInsID);
+		for (int i = 1; i <= highestInsID; ++i)
+			System.out.print(inputs.get(i) + "\t");
+		System.out.println();
 	}
-
-	/*
-	public void input(String consensus) 
-	{
-		input(nextProcessInsID, consensus);
-	}
-	*/
 
 	public String getConsensus(int instanceID)
 	{
@@ -45,9 +37,9 @@ public class StateMachine
 		return "none";
 	}
 
-	public String getOutput()
+	public String getOutput(int instanceID)
 	{
 		// temp
-		return inputs.get(nextProcessInsID-1) + "\n";
+		return inputs.get(instanceID) + "\n";
 	}
 }
