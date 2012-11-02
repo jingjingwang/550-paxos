@@ -23,7 +23,9 @@ public class PaxosServer
 	private static final int portBase = 2139;
 	private static final int MaxClientNum = 100;
 	private static final int cmdLength = 30;
-	private static final int MaxWaitingRound = 5;
+	private static final int MaxWaitingRound = 2;
+	private static final long MaxWaitingReproposeTime = 300;
+	private static final long MaxWaitingSelectTime = 100;
 	private static final double GeneralLostRate = -1;
 	private static final double PrepareLostRate = GeneralLostRate;
 	private static final double RePrepareLostRate = GeneralLostRate;
@@ -42,6 +44,7 @@ public class PaxosServer
 	private static int cntPropNum = 0;
 	private static int cntInsID = 0;
 	private static int highestInsID = 0;
+	private static long prevRoundStartTime;
 
 	private static ExtendedHashMap<Integer, String> highestRePrepareValue = new ExtendedHashMap<Integer, String>("");
 	private static ExtendedHashMap<Integer, String> highestAcceptedValue = new ExtendedHashMap<Integer, String>("");
@@ -62,6 +65,8 @@ public class PaxosServer
 		// currently only calls when "chosen". what if the chosen message is lost (not one get it, e.g. distinguished learner died before sending msg)? need a timeout to restart?
 		// if some learners get it, they will start a new round. then this one will learn it by asking eventually
 		System.out.println("newRoundInit");
+
+		prevRoundStartTime = System.currentTimeMillis();
 		distinLearner = false;
 		cntPropNum += (new Random()).nextInt(10) + 1;
 		// my definition of highestInsID: highest ins id that I know that indeed has a chosen value (via "chosen" or "answer")
@@ -391,7 +396,7 @@ public class PaxosServer
 		{
 			try
 		    	{
-				selector.select();
+				selector.select(MaxWaitingSelectTime);
 		    	} 
 			catch (IOException e) 
 		    	{
@@ -407,7 +412,10 @@ public class PaxosServer
 				keyIter.remove();
 		    	}
 			System.out.println("------ one selection --------");
-			Thread.sleep(7000);
+			//Thread.sleep(7000);
+			long cntTime = System.currentTimeMillis();
+			if (cntTime - prevRoundStartTime > MaxWaitingReproposeTime)
+				newRoundInit();
 		}
 		
 		}
