@@ -20,19 +20,27 @@ import java.net.ConnectException;
 
 public class PaxosServer 
 {
+	private static final int portBase = 2139;
+	private static final int MaxClientNum = 100;
+	private static final int cmdLength = 30;
+	private static final double GeneralLostRate = -1;
+	private static final double PrepareLostRate = GeneralLostRate;
+	private static final double RePrepareLostRate = GeneralLostRate;
+	private static final double AcceptLostRate = GeneralLostRate;
+	private static final double ReAcceptLostRate = GeneralLostRate;
+	private static final double ChosenLostRate = GeneralLostRate;
+	private static final double AskLostRate = GeneralLostRate;
+	private static final double AnswerLostRate = GeneralLostRate;
+
 	private static int serverID;
-	private static int portBase = 2139;
-	private static int MaxClientNum = 100;
-	private static int cmdLength = 30;
 	private static int numClient = 0;
-	public static int numServer;
-	public static int numMajority;
+	private static int numServer;
+	private static int numMajority;
 	private static boolean distinLearner;
 	private static boolean proposed;
 	private static int cntPropNum = 0;
 	private static int cntInsID = 0;
 	private static int highestInsID = 0;
-	private static Selector selector;
 
 	private static ExtendedHashMap<Integer, String> highestRePrepareValue = new ExtendedHashMap<Integer, String>("");
 	private static ExtendedHashMap<Integer, String> highestAcceptedValue = new ExtendedHashMap<Integer, String>("");
@@ -43,12 +51,15 @@ public class PaxosServer
 	private static ExtendedHashMap<Integer, Integer> highestRePrepareNum = new ExtendedHashMap<Integer, Integer>(-1);
 
 	private static StateMachine stateMachine = new StateMachine();
+	private static Selector selector;
 	private static LinkedList<ClientCommand> clientRequestQueue = new LinkedList<ClientCommand>();
 	private static ArrayList<LinkedList<String> > writeQueue = new ArrayList<LinkedList<String> >();
 	private static ArrayList<SelectionKey> selKeyArray = new ArrayList<SelectionKey>();
 
 	private static void newRoundInit()
 	{
+		// currently only calls when "chosen". what if the chosen message is lost (not one get it, e.g. distinguished learner died before sending msg)? need a timeout to restart?
+		// if some learners get it, they will start a new round. then this one will learn it by asking eventually
 		System.out.println("newRoundInit");
 		distinLearner = false;
 		cntPropNum += (new Random()).nextInt(10) + 1;
@@ -434,6 +445,8 @@ public class PaxosServer
 				}
 				if (command.startsWith("prepare"))
 				{
+					if (Math.random() < PrepareLostRate)
+						return;
 					int propNum = Integer.parseInt(getField(command, 1));
 					if (propNum <= highestRespondedPropNum.getInt(flyingInsID))
 						return;
@@ -442,6 +455,8 @@ public class PaxosServer
 				}
 				else if (command.startsWith("re-prepare"))
 				{
+					if (Math.random() < RePrepareLostRate)
+						return;
 					numPrepareResponse.put(flyingInsID, numPrepareResponse.getInt(flyingInsID) + 1);
 					int propNum = Integer.parseInt(getField(command, 1));
 					if (propNum > highestRePrepareNum.getInt(flyingInsID))
@@ -462,6 +477,8 @@ public class PaxosServer
 				}
 				else if (command.startsWith("accept"))
 				{
+					if (Math.random() < AcceptLostRate)
+						return;
 					int propNum = Integer.parseInt(getField(command, 1));
 					if (propNum < highestRespondedPropNum.getInt(flyingInsID))
 						addIntoWriteQueue(indx, extendCommand(flyingInsID, "re-accept rej"));
@@ -474,6 +491,8 @@ public class PaxosServer
 				}
 				else if (command.startsWith("re-accept"))
 				{
+					if (Math.random() < ReAcceptLostRate)
+						return;
 					if (command.startsWith("re-accept rej"))
 					{
 					}
@@ -490,6 +509,8 @@ public class PaxosServer
 				}
 				else if (command.startsWith("chosen"))
 				{
+					if (Math.random() < ChosenLostRate)
+						return;
 					String value = getField(command, 1);
 					stateMachine.input(flyingInsID, value);
 					if (distinLearner)
@@ -499,15 +520,19 @@ public class PaxosServer
 					}
 					if (flyingInsID > highestInsID)
 						highestInsID = flyingInsID;
-					newRoundInit();
+					newRoundInit(); 
 				}
 				else if (command.startsWith("ask")) // when to send it?  maybe a timeout?
 				{
+					if (Math.random() < AskLostRate)
+						return;
 					int askingInsID = Integer.parseInt(getField(command, 1));
 					addIntoWriteQueue(indx, extendCommand(askingInsID, "answer " + stateMachine.getConsensus(askingInsID)));
 				}
 				else if (command.startsWith("answer"))
 				{
+					if (Math.random() < AnswerLostRate)
+						return;
 					String answer = getField(command, 1);
 					int askingInsID = Integer.parseInt(getField(command, -1));
 					if (!answer.equals("none"))
