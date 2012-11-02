@@ -22,11 +22,10 @@ public class PaxosServer
 {
 	private static final int portBase = 2139;
 	private static final int MaxClientNum = 100;
-	private static final int cmdLength = 30;
+	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
-	private static final long MaxWaitingReproposeTime = 300;
-	private static final long MaxWaitingSelectTime = 1000;
-	private static final double GeneralLostRate = -1;
+	private static final long MaxWaitingSelectTime = 200;
+	private static final double GeneralLostRate = 0.3;
 	private static final double PrepareLostRate = GeneralLostRate;
 	private static final double RePrepareLostRate = GeneralLostRate;
 	private static final double AcceptLostRate = GeneralLostRate;
@@ -41,9 +40,8 @@ public class PaxosServer
 	private static int numMajority;
 	private static boolean proposed;
 	private static int cntPropNum = 0;
-	private static int cntInsID = 0;
-	private static int highestInsID = 0;
-	private static long prevRoundStartTime;
+	private static int cntInsID = 1;
+	private static int highestInsID = 1;
 
 	private static ExtendedHashMap<Integer, String> highestAcceptedValue = new ExtendedHashMap<Integer, String>("");
 	private static ExtendedHashMap<Integer, String> highestRePrepareValue = new ExtendedHashMap<Integer, String>("");
@@ -53,25 +51,28 @@ public class PaxosServer
 	private static ExtendedHashMap<Integer, Integer> highestRespondedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
 	private static ExtendedHashMap<Integer, Integer> highestRePrepareNum = new ExtendedHashMap<Integer, Integer>(-1);
 	private static ExtendedHashMap<Integer, Integer> distinProposer = new ExtendedHashMap<Integer, Integer>(0);
-	private static ExtendedHashMap<Integer, Integer> sentToClient = new ExtendedHashMap<Integer, Integer>(0);
 	
 	private static StateMachine stateMachine = new StateMachine();
 	private static Selector selector;
 	private static LinkedList<ClientCommand> clientRequestQueue = new LinkedList<ClientCommand>();
+
+	private static LinkedList<PendingAnswer> pendingToAnswer = new LinkedList<PendingAnswer>();
+
 	private static ArrayList<LinkedList<String> > writeQueue = new ArrayList<LinkedList<String> >();
 	private static ArrayList<SelectionKey> selKeyArray = new ArrayList<SelectionKey>();
 
-	private static void newRoundInit(boolean newInstance)
+	private static void newRoundInit()
 	{
 		// currently only calls when "chosen". what if the chosen message is lost (not one get it, e.g. distinguished learner died before sending msg)? need a timeout to restart?
 		// if some learners get it, they will start a new round. then this one will learn it by asking eventually
-		prevRoundStartTime = System.currentTimeMillis();
-		//System.out.println("newRoundInit, cnt time " + prevRoundStartTime);
+		//System.out.println("newRoundInit");
 
 		cntPropNum += (new Random()).nextInt(10) + 1;
 		// my definition of highestInsID: highest ins id that I know that indeed has a chosen value (via "chosen" or "answer")
 		// so if each server only uses this value + 1 as the new ins id, there won't be an empty instance id with no value chosen
-		if (!newInstance) //cntInsID == highestInsID + 1)
+
+		
+		if (stateMachine.getInput(cntInsID).equals("none")) //cntInsID == highestInsID + 1)
 		{
 			// not a new round, update proposer's state
 			// probably a good motivation to seperate 3 roles here
@@ -79,11 +80,42 @@ public class PaxosServer
 			numPrepareResponse.put(cntInsID, 0);
 			distinProposer.put(cntInsID, 0);
 		}
-		else
+		else // has result for this instance already, could go to a new one
+		{
+			if (getCntRequest() != null)
+			{
+				//System.out.println("cnt request is chosen! " + getCntRequest());
+				if (stateMachine.getInput(cntInsID).equals(getCntRequest())) // the value is successfully chosen, move to the next request
+				{
+					System.out.println("add pendig answer " + cntInsID + " " + clientRequestQueue.get(0).command);
+					pendingToAnswer.add(new PendingAnswer(clientRequestQueue.get(0), cntInsID));
+					clientRequestQueue.remove();
+					checkPendingAnswer();
+				}
+			}
 			cntInsID = highestInsID + 1;
+		}
 
 		proposed = false;
 		tryPropose();
+	}
+
+	public static void checkPendingAnswer()
+	{
+		System.out.println("checkpendinganswer " + pendingToAnswer.size());
+		while (pendingToAnswer.size() > 0)
+		{
+			int tmpID = pendingToAnswer.get(0).insID;
+			String tmpAns = stateMachine.getOutput(tmpID);
+			System.out.println(tmpID + "\t" + tmpAns);
+			if (tmpAns != null)
+			{
+				addIntoWriteQueue((Integer)(pendingToAnswer.get(0).clientCommand.key.attachment()), tmpAns); 
+				pendingToAnswer.remove();
+			}
+			else
+				break;
+		}
 	}
 
 	public static void checkIfAskMissedInstance(int flyingInsID)
@@ -92,7 +124,7 @@ public class PaxosServer
 		{
 			//System.out.println("asking from " + stateMachine.nextProcessInsID + " to " + (flyingInsID-1));
 			for (int i = stateMachine.nextProcessInsID; i < flyingInsID; ++i)
-				if (stateMachine.getConsensus(i).equals("none"))
+				if (stateMachine.getInput(i).equals("none"))
 					for (int j = 1; j <= numServer; ++j)
 						addIntoWriteQueue(j, extendCommand(cntInsID, "ask " + i));
 		}
@@ -100,6 +132,8 @@ public class PaxosServer
 
 	public static String getCntRequest()
 	{
+		if (clientRequestQueue.size() == 0)
+			return null;
 		return clientRequestQueue.get(0).command;
 	}
 
@@ -273,7 +307,7 @@ public class PaxosServer
         	Charset charset = Charset.defaultCharset();  
         	CharsetDecoder decoder = charset.newDecoder();  
         	String s = decoder.decode(buffer).toString().trim();
-		return s;
+		return s + ":" + serverID;
 
 		}
 		catch (Exception e)
@@ -402,7 +436,7 @@ public class PaxosServer
 
 		registerOtherServers(listenChannel);
 		//System.out.println("registration done");
-		newRoundInit(true);
+		newRoundInit();
 
 		while (true) 
 		{
@@ -427,10 +461,10 @@ public class PaxosServer
 			//System.out.println("------ one selection --------");
 			//Thread.sleep(7000);
 			long cntTime = System.currentTimeMillis();
-			if (numChanged == 0 && proposed)//cntTime - prevRoundStartTime > MaxWaitingReproposeTime && proposed)
+			if (numChanged == 0 && proposed)
 			{
 				//System.out.println("waited so long, trying to propose again");
-				newRoundInit(false);
+				newRoundInit();
 			}
 		}
 		
@@ -556,18 +590,14 @@ public class PaxosServer
 					String value = getField(command, 1);
 					stateMachine.input(flyingInsID, value);
 					checkIfAskMissedInstance(flyingInsID);
+					checkPendingAnswer();
 					// need to change the logic here! state machine might delay!
 					if (flyingInsID > highestInsID)
 						highestInsID = flyingInsID;
-					if (distinProposer.getInt(flyingInsID) == 1 && sentToClient.getInt(flyingInsID) == 0)
-					{
-						// but has written beofre1
-						addIntoWriteQueue(getCntClientIndx(), stateMachine.getOutput(flyingInsID));
-						clientRequestQueue.remove();
-						sentToClient.put(flyingInsID, 1);
-					}
-					if (cntInsID == flyingInsID)
-						newRoundInit(true);
+					//if (distinProposer.getInt(flyingInsID) == 1 && sentToClient.getInt(flyingInsID) == 0)
+						//sentToClient.put(flyingInsID, 1);
+					//if (cntInsID == flyingInsID)
+					newRoundInit();
 				}
 				else if (command.startsWith("ask")) // when to send it?  maybe a timeout?
 				{
@@ -575,7 +605,7 @@ public class PaxosServer
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					int askingInsID = Integer.parseInt(getField(command, 1));
-					addIntoWriteQueue(indx, extendCommand(askingInsID, "answer " + stateMachine.getConsensus(askingInsID)));
+					addIntoWriteQueue(indx, extendCommand(askingInsID, "answer " + stateMachine.getInput(askingInsID)));
 				}
 				else if (command.startsWith("answer"))
 				{
@@ -587,6 +617,7 @@ public class PaxosServer
 					if (!answer.equals("none"))
 					{
 						stateMachine.input(askingInsID, answer);
+						checkPendingAnswer();
 						if (askingInsID > highestInsID) 
 							highestInsID = askingInsID; 
 					} 
@@ -642,6 +673,18 @@ public class PaxosServer
 		{
 			this.command = command;
 			this.key = key;
+		}
+	}
+
+	private static class PendingAnswer
+	{
+		private ClientCommand clientCommand;
+		private int insID;
+
+		PendingAnswer(ClientCommand clientCommand, int insID)
+		{
+			this.clientCommand = clientCommand;
+			this.insID = insID;
 		}
 	}
 }

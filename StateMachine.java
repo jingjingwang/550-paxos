@@ -30,7 +30,7 @@ public class StateMachine
 		System.out.println();
 	}
 
-	public String getConsensus(int instanceID)
+	public String getInput(int instanceID)
 	{
 		if (inputs.get(instanceID) != null)
 			return inputs.get(instanceID);
