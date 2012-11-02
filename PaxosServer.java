@@ -64,6 +64,8 @@ public class PaxosServer
 		System.out.println("newRoundInit");
 		distinLearner = false;
 		cntPropNum += (new Random()).nextInt(10) + 1;
+		// my definition of highestInsID: highest ins id that I know that indeed has a chosen value (via "chosen" or "answer")
+		// so if each server only uses this value + 1 as the new ins id, there won't be an empty instance id with no value chosen
 		cntInsID = highestInsID + 1;
 
 		proposed = false;
@@ -71,8 +73,8 @@ public class PaxosServer
 
 		if (cntInsID - stateMachine.nextProcessInsID >= MaxWaitingRound)
 		{
-			System.out.println("asking from " + stateMachine.nextProcessInsID + " to " + (cntInsID-1));
-			for (int i = stateMachine.nextProcessInsID; i < cntInsID; ++i)
+			System.out.println("asking from " + stateMachine.nextProcessInsID + " to " + (highestInsID-1));
+			for (int i = stateMachine.nextProcessInsID; i < highestInsID; ++i)
 				if (stateMachine.getConsensus(i).equals("none"))
 					for (int j = 1; j < numServer; ++j)
 						addIntoWriteQueue(j, extendCommand(cntInsID, "ask " + i));
@@ -538,7 +540,11 @@ public class PaxosServer
 					String answer = getField(command, 1);
 					int askingInsID = Integer.parseInt(getField(command, -1));
 					if (!answer.equals("none"))
+					{
 						stateMachine.input(askingInsID, answer);
+						if (askingInsID > highestInsID) 
+							highestInsID = askingInsID; 
+					} 
 				}
 			}
 			else // read from a real client, lock & unlock
