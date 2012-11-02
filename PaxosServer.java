@@ -24,13 +24,13 @@ public class PaxosServer
 	private static final int MaxClientNum = 100;
 	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
-	private static final long MaxWaitingSelectTime = 200;
-	private static final double GeneralLostRate = 0.3;
+	private static final long MaxWaitingSelectTime = 100;
+	private static final double GeneralLostRate = 0.5;
 	private static final double PrepareLostRate = GeneralLostRate;
 	private static final double RePrepareLostRate = GeneralLostRate;
 	private static final double AcceptLostRate = GeneralLostRate;
 	private static final double ReAcceptLostRate = GeneralLostRate;
-	private static final double ChosenLostRate = 0.9;//GeneralLostRate;
+	private static final double ChosenLostRate = GeneralLostRate;
 	private static final double AskLostRate = GeneralLostRate;
 	private static final double AnswerLostRate = GeneralLostRate;
 
