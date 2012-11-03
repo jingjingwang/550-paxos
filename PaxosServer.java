@@ -23,9 +23,10 @@ import java.net.ConnectException;
 public class PaxosServer 
 {
 	private static final int serverPortBase = 2139;
-	private static final int clientPortBase = 2139;
+	private static final int clientPortBase = 4139;
 	private static final int MaxClientNum = 100;
 	private static final int MaxServerNum = 20;
+	private static final int MaxConnNum = 100;
 	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
 	private static final long MaxWaitingSelectTime = 100;
@@ -267,7 +268,7 @@ public class PaxosServer
 		//key.attach(-1); need it?
 		((SocketChannel)key.channel()).close();
 		key.cancel();
-		numClient--;
+		//numClient--;
 
 		}
 		catch (Exception e)
@@ -292,17 +293,13 @@ public class PaxosServer
 		{
 			int justRead = channel.read(single);
 			if (justRead == -1) 
-			{
-				//System.out.println("client connection closed, read");
-				removeConnection(key);
-				return "";
-			}
+				throw new Exception();
 			if (justRead > 0)
 			{
 				hasRead += justRead;
-				buffer.put(single.get(0));
 				if (single.get(0) == (byte)(10) || single.get(0) == (byte)('#'))
 					break;
+				buffer.put(single.get(0));
 			}
 			if (hasRead >= cmdLength)
 			{
@@ -316,14 +313,18 @@ public class PaxosServer
         	Charset charset = Charset.defaultCharset();  
         	CharsetDecoder decoder = charset.newDecoder();  
         	String s = decoder.decode(buffer).toString().trim();
-		return s + ":" + serverID;
+		if (single.get(0) == (byte)(10)) // from client
+			s = s + ":" + serverID;
+		return s;
 
 		}
 		catch (Exception e)
 		{
 			e.printStackTrace();
+			System.out.println("client connection closed, read");
+			removeConnection(key);
+			return "";
 		}
-		return null;
 	}
 
 	/*
@@ -386,10 +387,10 @@ public class PaxosServer
 		}
 		catch (Exception e)
 		{
-			//System.out.println("connection closed, write");
+			System.out.println("connection closed, write");
 			//if ((Integer)(key.attachment()) > 2*numServer)
 			removeConnection(key);
-			//e.printStackTrace();
+			e.printStackTrace();
 		}
 	}
 
@@ -493,17 +494,19 @@ public class PaxosServer
 		{
 			//System.out.println("acceptable");
 			//System.out.println("new client connection: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort());
-			if (tag.equals("listen_server") && cntNumServer < MaxServerNum) 
+			if (tag.equals("listen_server") && selector.keys().size() < MaxConnNum) 
 			{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("paxos_as_server"); //(++numClient) + 2*cntNumServer);
+				//cntNumServer++;
 			}
-			if (tag.equals("listen_client") && cntNumClient < MaxClientNum)
+			if (tag.equals("listen_client") && selector.keys().size() < MaxConnNum)
 	    		{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("client"); //(++numClient) + 2*cntNumServer);
+				//cntNumClient++;
 			}
 	    	}
 	    	if (selKey.isValid() && selKey.isReadable()) 
@@ -513,7 +516,9 @@ public class PaxosServer
 			//	command = readFromSocketChannel(selKey);
 			//else
 			command = readFromSocketChannel(selKey);
-			//System.out.println("readable " + command);
+			System.out.println("readable " + command);
+			if (command.equals(""))
+				return;
 
 			if (tag.startsWith("paxos")) // read from another server
 			{
@@ -667,17 +672,17 @@ public class PaxosServer
 
 	public static String extendCommand(int insID, String s)
 	{
-		s = s + " " + insID;
-		int len = s.length();
-		for (int i = 0; i < cmdLength - len; ++i)
-			s = s + "#";
-		//System.out.println("extend command " + s);
+		s = s + " " + insID + "#";
+		//int len = s.length();
+		//for (int i = 0; i < cmdLength - len; ++i)
+		//	s = s + "#";
+		System.out.println("extend command " + s);
 		return s;
 	}
 
 	public static String getField(String s, int indx)
 	{
-		s = s.substring(0, s.indexOf('#'));
+		//s = s.substring(0, s.indexOf('#'));
 		String[] splitted = s.split(" ");
 		if (indx == -1)
 			return splitted[splitted.length-1];
