@@ -230,6 +230,7 @@ public class PaxosServer
 					SelectionKey key = tmp.register(selector, SelectionKey.OP_READ);
 					key.attach("paxos_as_client");
 					connAsClient.add(key);
+					writeToSocketChannel(key, extendCommand("newserver " + serverID));
 					//addSelKey(asClient[i].register(selector, SelectionKey.OP_READ), cntNumServer++, "asClient");
 				}
 			}
@@ -238,7 +239,7 @@ public class PaxosServer
 			}
 	}
 
-	private static void removeClientConnection(SelectionKey key)
+	private static void removeConnection(SelectionKey key)
 	{
 		try
 		{
@@ -253,6 +254,8 @@ public class PaxosServer
 		//selKeyArray.set(indx, selKeyArray.get(replaceIndx));
 		//writeQueue.set(indx, writeQueue.get(replaceIndx));
 		writeQueue.remove(key);
+		if (key.attachment().equals("paxos_as_client"))
+			connAsClient.remove(key);
 		//selKeyArray.get(indx).attach(indx);
 		//key.attach(-1); need it?
 		((SocketChannel)key.channel()).close();
@@ -266,7 +269,7 @@ public class PaxosServer
 		}
 	}
 
-	private static String readFromClientSocketChannel(SelectionKey key)
+	private static String readFromSocketChannel(SelectionKey key)
 	{
 		try
 		{
@@ -284,14 +287,14 @@ public class PaxosServer
 			if (justRead == -1) 
 			{
 				//System.out.println("client connection closed, read");
-				removeClientConnection(key);
+				removeConnection(key);
 				return "";
 			}
 			if (justRead > 0)
 			{
 				hasRead += justRead;
 				buffer.put(single.get(0));
-				if (single.get(0) == (byte)(10))
+				if (single.get(0) == (byte)(10) || single.get(0) == (byte)('#'))
 					break;
 			}
 			if (hasRead >= cmdLength)
@@ -316,6 +319,7 @@ public class PaxosServer
 		return null;
 	}
 
+	/*
 	private static String readFromSocketChannel(SelectionKey key) 
 	{
 		try
@@ -350,6 +354,7 @@ public class PaxosServer
 		}
 		return null;
 	}
+	*/
 
 	private static void writeToSocketChannel(SelectionKey key, String cmd)
 	{
@@ -376,7 +381,7 @@ public class PaxosServer
 		{
 			//System.out.println("connection closed, write");
 			//if ((Integer)(key.attachment()) > 2*numServer)
-				removeClientConnection(key);
+			removeConnection(key);
 			//e.printStackTrace();
 		}
 	}
@@ -494,10 +499,10 @@ public class PaxosServer
 	    	if (selKey.isValid() && selKey.isReadable()) 
 		{
 			String command;
-			if (tag.startsWith("paxos"))
-				command = readFromSocketChannel(selKey);
-			else
-				command = readFromClientSocketChannel(selKey);
+			//if (tag.startsWith("paxos"))
+			//	command = readFromSocketChannel(selKey);
+			//else
+			command = readFromSocketChannel(selKey);
 			//System.out.println("readable " + command);
 
 			if (tag.startsWith("paxos")) // read from another server
