@@ -214,7 +214,7 @@ public class PaxosServer
 		return null;
 	}
 
-	public static void connectToOtherServer() throws Exception
+	public static void connectToOtherServer()
 	{
 		// 1 - numServer: accept other machine's connection as a server
 		// numServer+1 - 2*numServer: connect to another machine as a client
@@ -222,21 +222,28 @@ public class PaxosServer
 		// 2*numServer+1 - __ : clients
 
 		for (int i = 0; i < numServer; ++i) // include itself
-			try
+			connectToOneServer(i, true);
+	}
+
+
+	public static void connectToOneServer(int i, boolean justStart) 
+	{
+		try
+		{
+			SocketChannel tmp = createSocketChannel("127.0.0.1", serverPortBase + i);
+			if (tmp != null)
 			{
-				SocketChannel tmp = createSocketChannel("127.0.0.1", serverPortBase + i);
-				if (tmp != null)
-				{
-					SelectionKey key = tmp.register(selector, SelectionKey.OP_READ);
-					key.attach("paxos_as_client");
-					connAsClient.add(key);
-					writeToSocketChannel(key, extendCommand("newserver " + serverID));
-					//addSelKey(asClient[i].register(selector, SelectionKey.OP_READ), cntNumServer++, "asClient");
-				}
+				SelectionKey key = tmp.register(selector, SelectionKey.OP_READ);
+				key.attach("paxos_as_client");
+				connAsClient.add(key);
+				if (justStart)
+					writeToSocketChannel(key, extendCommand(0, "newserver " + serverID));
 			}
-			catch (Exception e)
-			{
-			}
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+		}
 	}
 
 	private static void removeConnection(SelectionKey key)
@@ -485,13 +492,16 @@ public class PaxosServer
 	    	if (selKey.isValid() && selKey.isAcceptable())
 		{
 			//System.out.println("acceptable");
+			//System.out.println("new client connection: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort());
 			if (tag.equals("listen_server") && cntNumServer < MaxServerNum) 
 			{
+				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
+				newConn.configureBlocking(false); 
+				newConn.register(selector, SelectionKey.OP_READ).attach("paxos_as_server"); //(++numClient) + 2*cntNumServer);
 			}
 			if (tag.equals("listen_client") && cntNumClient < MaxClientNum)
 	    		{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
-				//System.out.println("new client connection: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort());
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("client"); //(++numClient) + 2*cntNumServer);
 			}
@@ -628,6 +638,12 @@ public class PaxosServer
 						if (askingInsID > highestInsID) 
 							highestInsID = askingInsID; 
 					} 
+				}
+				else if (command.startsWith("newserver"))
+				{
+					checkIfAskMissedInstance(flyingInsID);
+					int id = Integer.parseInt(getField(command, 1));
+					connectToOneServer(id, false);
 				}
 			}
 			else // read from a real client
