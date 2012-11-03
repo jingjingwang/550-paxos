@@ -61,7 +61,7 @@ public class PaxosServer
 	private static StateMachine stateMachine = new StateMachine();
 	private static Selector selector;
 	private static LinkedList<ClientCommand> clientRequestQueue = new LinkedList<ClientCommand>();
-	private static HashSet<SocketChannel> connAsClient = new HashSet<SocketChannel>();
+	private static HashSet<SelectionKey> connAsClient = new HashSet<SelectionKey>();
 
 	private static LinkedList<PendingAnswer> pendingToAnswer = new LinkedList<PendingAnswer>();
 
@@ -127,6 +127,13 @@ public class PaxosServer
 
 	public static void broadcastToAllServers(String str)
 	{
+		Iterator<SelectionKey> iter = connAsClient.iterator();
+		while (iter.hasNext())
+		{
+			addIntoWriteQueue(iter, str);
+			iter = iter.next();
+		}
+
 	}
 
 	public static void checkIfAskMissedInstance(int flyingInsID)
@@ -224,8 +231,9 @@ public class PaxosServer
 				SocketChannel tmp = createSocketChannel("127.0.0.1", serverPortBase + i);
 				if (tmp != null)
 				{
-					tmp.register(selector, SelectionKey.OP_READ).attach(cntNumServer++);
-					connAsClient.add(tmp);
+					SelectionKey key = tmp.register(selector, SelectionKey.OP_READ);
+					key.attach(cntNumServer++);
+					connAsClient.add(key);
 					//addSelKey(asClient[i].register(selector, SelectionKey.OP_READ), cntNumServer++, "asClient");
 				}
 			}
