@@ -32,4 +32,20 @@ public class ExtendedHashMap<K, V> extends HashMap<K, V>
 			return defaultStr;
 		return (String)tmp;
 	}
+
+	public void putInt(K indx, V value)
+	{
+		if ((Integer)(value) == defaultInt)
+			return;
+		put(indx, value);
+	}
+
+	public void putStr(K indx, V value)
+	{
+		if (((String)(value)).equals(defaultStr))
+			return;
+		put(indx, value);
+	}
+
 }
+
