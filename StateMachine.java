@@ -3,7 +3,7 @@ import java.util.HashMap;
 public class StateMachine
 {
 	public int nextProcessInsID = 1; 
-	private int highestInsID = 0; 
+	public int highestInsID = 0; 
 
 	HashMap<Integer, String> inputs;
 
@@ -14,6 +14,8 @@ public class StateMachine
 
 	public void input(int instanceID, String consensus) 
 	{
+		if (consensus.equals("none"))
+			return;
 		System.out.println("   state machine input: " + instanceID + " " + consensus);
 		if (instanceID > highestInsID)
 			highestInsID = instanceID;

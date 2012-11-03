@@ -16,6 +16,11 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.Charset;  
 import java.nio.CharBuffer;  
 import java.io.IOException;
+import java.io.File;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.net.Socket;
 import java.net.InetSocketAddress;
 import java.net.ConnectException;
@@ -29,8 +34,8 @@ public class PaxosServer
 	private static final int MaxConnNum = 100;
 	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
-	private static final long MaxWaitingSelectTime = 100;
-	private static final double GeneralLostRate = 0.5;
+	private static final long MaxWaitingSelectTime = 50;
+	private static final double GeneralLostRate = 0.4;
 	private static final double PrepareLostRate = GeneralLostRate;
 	private static final double RePrepareLostRate = GeneralLostRate;
 	private static final double AcceptLostRate = GeneralLostRate;
@@ -40,68 +45,57 @@ public class PaxosServer
 	private static final double AnswerLostRate = GeneralLostRate;
 
 	private static int serverID;
-	private static int numClient = 0;
 	private static int numServer;
 	private static int numMajority;
-	private static boolean proposed;
+	private static boolean proposed = false;
 	private static int cntPropNum = 0;
 	private static int cntInsID = 1;
-	private static int highestInsID = 1;
 	private static int cntNumClient = 0;
 	private static int cntNumServer = 0;
+	private static int highestInsID = 1;
 
-	private static ExtendedHashMap<Integer, String> highestAcceptedValue = new ExtendedHashMap<Integer, String>("");
-	private static ExtendedHashMap<Integer, String> highestRePrepareValue = new ExtendedHashMap<Integer, String>("");
 	private static ExtendedHashMap<Integer, Integer> numAccepted = new ExtendedHashMap<Integer, Integer>(0);
 	private static ExtendedHashMap<Integer, Integer> numPrepareResponse = new ExtendedHashMap<Integer, Integer>(0);
 	private static ExtendedHashMap<Integer, Integer> highestAcceptedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
-	private static ExtendedHashMap<Integer, Integer> highestRespondedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
+	private static ExtendedHashMap<Integer, String> highestAcceptedValue = new ExtendedHashMap<Integer, String>("");
 	private static ExtendedHashMap<Integer, Integer> highestRePrepareNum = new ExtendedHashMap<Integer, Integer>(-1);
-	//private static ExtendedHashMap<Integer, Integer> distinProposer = new ExtendedHashMap<Integer, Integer>(0);
+	private static ExtendedHashMap<Integer, String> highestRePrepareValue = new ExtendedHashMap<Integer, String>("");
+	private static ExtendedHashMap<Integer, Integer> highestRespondedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
 	
 	private static StateMachine stateMachine = new StateMachine();
+
 	private static Selector selector;
 	private static LinkedList<ClientCommand> clientRequestQueue = new LinkedList<ClientCommand>();
 	private static HashSet<SelectionKey> connAsClient = new HashSet<SelectionKey>();
-
 	private static LinkedList<PendingAnswer> pendingToAnswer = new LinkedList<PendingAnswer>();
-
 	private static HashMap<SelectionKey, LinkedList<String> > writeQueue = new HashMap<SelectionKey, LinkedList<String> >();
-	//private static ArrayList<SelectionKey> selKeyArray = new ArrayList<SelectionKey>();
 
 	private static void newRoundInit()
 	{
-		// currently only calls when "chosen". what if the chosen message is lost (not one get it, e.g. distinguished learner died before sending msg)? need a timeout to restart?
-		// if some learners get it, they will start a new round. then this one will learn it by asking eventually
 		//System.out.println("newRoundInit");
-
-		cntPropNum += (new Random()).nextInt(10) + 1;
 		// my definition of highestInsID: highest ins id that I know that indeed has a chosen value (via "chosen" or "answer")
 		// so if each server only uses this value + 1 as the new ins id, there won't be an empty instance id with no value chosen
 
-		
-		if (stateMachine.getInput(cntInsID).equals("none")) //cntInsID == highestInsID + 1)
+		if (stateMachine.getInput(cntInsID).equals("none")) 
 		{
 			// not a new round, update proposer's state
 			// probably a good motivation to seperate 3 roles here
 			numAccepted.put(cntInsID, 0);
 			numPrepareResponse.put(cntInsID, 0);
-			//distinProposer.put(cntInsID, 0);
+			cntPropNum += (new Random()).nextInt(10) + 1;
 		}
 		else // has result for this instance already, could go to a new one
 		{
-			if (getCntRequest() != null)
+			if (getCntRequest() != null && stateMachine.getInput(cntInsID).equals(getCntRequest())) 
+			// the value is successfully chosen, move to the next request
 			{
-				//System.out.println("cnt request is chosen! " + getCntRequest());
-				if (stateMachine.getInput(cntInsID).equals(getCntRequest())) // the value is successfully chosen, move to the next request
-				{
-					System.out.println("add pendig answer " + cntInsID + " " + clientRequestQueue.get(0).command);
-					pendingToAnswer.add(new PendingAnswer(clientRequestQueue.get(0), cntInsID));
-					clientRequestQueue.remove();
-					checkPendingAnswer();
-				}
+				System.out.println("add pendig answer " + cntInsID + " " + clientRequestQueue.get(0).command);
+				pendingToAnswer.add(new PendingAnswer(clientRequestQueue.get(0), cntInsID));
+				clientRequestQueue.remove();
+				checkPendingAnswer();
 			}
 			cntInsID = highestInsID + 1;
+			cntPropNum = (new Random()).nextInt(10) + 1;
 		}
 
 		proposed = false;
@@ -217,11 +211,6 @@ public class PaxosServer
 
 	public static void connectToOtherServer()
 	{
-		// 1 - numServer: accept other machine's connection as a server
-		// numServer+1 - 2*numServer: connect to another machine as a client
-		// 2 paths for each pair of servers actually, anyone will work
-		// 2*numServer+1 - __ : clients
-
 		for (int i = 0; i < numServer; ++i) // include itself
 			connectToOneServer(i, true);
 	}
@@ -252,23 +241,17 @@ public class PaxosServer
 		try
 		{
 
-		//int indx = (Integer)(key.attachment());
-		//if (indx == -1)
 		if (!key.isValid())
 			return;
-		//int replaceIndx = 2*numServer + numClient;
-		//System.out.println("remove client connection, replacing " + replaceIndx + " " + indx);
-
-		//selKeyArray.set(indx, selKeyArray.get(replaceIndx));
-		//writeQueue.set(indx, writeQueue.get(replaceIndx));
-		writeQueue.remove(key);
 		if (key.attachment().equals("paxos_as_client"))
 			connAsClient.remove(key);
-		//selKeyArray.get(indx).attach(indx);
-		//key.attach(-1); need it?
+		if (key.attachment().equals("paxos_as_server"))
+			cntNumServer--;
+		if (key.attachment().equals("client"))
+			cntNumClient--;
+		writeQueue.remove(key);
 		((SocketChannel)key.channel()).close();
 		key.cancel();
-		//numClient--;
 
 		}
 		catch (Exception e)
@@ -415,17 +398,68 @@ public class PaxosServer
 		return command;
 	}
 
-	//public static void addSelKey(SelectionKey key, int x)
-	//{
-	//	key.attach(x);
-		// i don't even know if we need attachment any more.
-			/*
-		if (x >= selKeyArray.size())
-			selKeyArray.add(key);
-		else
-			selKeyArray.set(x, key);
-			*/
-	//}
+	public static void loadCheckpoint()
+	{
+		try
+		{
+
+		String filename = "550paxos-" + serverID + ".checkpoint";
+		BufferedReader reader = new BufferedReader(new FileReader(new File(filename)));
+		String line;
+		// how to read state machine's internal state?
+		while ((line = reader.readLine()) != null)
+		{
+			System.out.println(line);
+			String[] items = line.split("\t");
+			int insID = Integer.parseInt(items[0]);
+			highestAcceptedPropNum.putInt(insID, Integer.parseInt(items[1]));
+			highestAcceptedValue.putStr(insID, items[2]);
+			highestRespondedPropNum.putInt(insID, Integer.parseInt(items[3]));
+			highestRePrepareValue.putStr(insID, items[4]);
+			highestRePrepareNum.putInt(insID, Integer.parseInt(items[5]));
+			numAccepted.putInt(insID, Integer.parseInt(items[6]));
+			numPrepareResponse.putInt(insID, Integer.parseInt(items[7]));
+			stateMachine.input(insID, items[8]);
+		}
+		highestInsID = stateMachine.highestInsID;
+
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+		}
+	}
+
+	public static void dumpCheckpoint()
+	{
+		try
+		{
+
+		String filename = "550paxos-" + serverID + ".checkpoint";
+		BufferedWriter writer = new BufferedWriter(new FileWriter(new File(filename)));
+		// how to dump state machine's internal state?
+		for (int i = 1; i <= highestInsID; ++i)
+		{
+			writer.write(i + "\t" + 
+				     highestAcceptedPropNum.getInt(i) + "\t" + 
+				     highestAcceptedValue.getStr(i) + "\t" +
+				     highestRespondedPropNum.getInt(i) + "\t" +
+				     highestRePrepareValue.getStr(i) + "\t" +
+				     highestRePrepareNum.getInt(i) + "\t" +
+				     numAccepted.getInt(i) + "\t" +
+				     numPrepareResponse.getInt(i) + "\t" +
+				     stateMachine.getInput(i));
+			writer.newLine();
+		}
+		writer.flush();
+		writer.close();
+
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+		}
+	}
 
 	public static void main(String[] args) 
 	{
@@ -435,6 +469,8 @@ public class PaxosServer
 		//System.out.println("Server No." + serverID + " launched.");
 		//for (int i = 0; i < 2*numServer + MaxClientNum + 1; ++i)
 		//	writeQueue.add(new LinkedList<String>());
+		
+		loadCheckpoint();
 
 		try 
 		{
@@ -445,7 +481,7 @@ public class PaxosServer
 		ServerSocketChannel listenChannel_client = createServerSocketChannel(clientPortBase + serverID);
 		listenChannel_client.register(selector, SelectionKey.OP_ACCEPT).attach("listen_client");
 
-		connectToOtherServer();//listenChannel_server);
+		connectToOtherServer();
 		//System.out.println("registration done");
 		newRoundInit();
 
@@ -467,16 +503,14 @@ public class PaxosServer
 				SelectionKey selKey = keyIter.next();
 				if (selKey.readyOps() > 0)
 			 		processSelectionKey(selKey);
+				dumpCheckpoint();
 				keyIter.remove();
 		    	}
 			//System.out.println("------ one selection --------");
-			//Thread.sleep(7000);
 			long cntTime = System.currentTimeMillis();
 			if (numChanged == 0 && proposed)
-			{
-				//System.out.println("waited so long, trying to propose again");
+				//waited so long, trying to propose again
 				newRoundInit();
-			}
 		}
 		
 		}
@@ -494,19 +528,19 @@ public class PaxosServer
 		{
 			//System.out.println("acceptable");
 			//System.out.println("new client connection: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort());
-			if (tag.equals("listen_server") && selector.keys().size() < MaxConnNum) 
+			if (tag.equals("listen_server") && cntNumServer < MaxServerNum) 
 			{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("paxos_as_server"); //(++numClient) + 2*cntNumServer);
-				//cntNumServer++;
+				cntNumServer++;
 			}
-			if (tag.equals("listen_client") && selector.keys().size() < MaxConnNum)
+			if (tag.equals("listen_client") && cntNumClient < MaxClientNum)
 	    		{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("client"); //(++numClient) + 2*cntNumServer);
-				//cntNumClient++;
+				cntNumClient++;
 			}
 	    	}
 	    	if (selKey.isValid() && selKey.isReadable()) 
