@@ -3,7 +3,7 @@ import java.util.HashMap;
 public class StateMachine
 {
 	public int nextProcessInsID = 1; 
-	private int highestInsID = 0; 
+	public int highestInsID = 0; 
 
 	HashMap<Integer, String> inputs;
 	HashMap<Integer, String> outputs;
@@ -16,14 +16,14 @@ public class StateMachine
 		dataStatus = new HashMap<String, Boolean>();
 	}
 	
-	public String getVariable(String cmd) {
+	private String getVariable(String cmd) {
 		int left = cmd.indexOf('(');
 		int right = cmd.indexOf(')');
 		
 		return cmd.substring(left + 1, right).trim();
 	}
 	
-	public String commitCommand(String cmd) {
+	private String commitCommand(String cmd) {
 		
 		String var;
 		String result;
@@ -102,22 +102,4 @@ public class StateMachine
 		
 		return outputs.get(instanceID);
 	}
-	
-	/*public static void main(String[] args) {
-		StateMachine sm = new StateMachine();
-		
-		String result;
-		result = sm.commitCommand("lock(x):1");
-		System.out.println(result);
-		result = sm.commitCommand("lock(y):2");
-		System.out.println(result);
-		result = sm.commitCommand("unlock(x):1");
-		System.out.println(result);
-		result = sm.commitCommand("unlock(x):1");
-		System.out.println(result);
-		result = sm.commitCommand("lock(y):3");
-		System.out.println(result);
-		result = sm.commitCommand("unlock(y):3");
-		System.out.println(result);
-	}*/
 }
