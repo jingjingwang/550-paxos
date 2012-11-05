@@ -1,4 +1,6 @@
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map.Entry;
 
 public class StateMachine
 {
@@ -7,7 +9,7 @@ public class StateMachine
 
 	HashMap<Integer, String> inputs;
 	HashMap<Integer, String> outputs;
-	HashMap<String, Boolean> dataStatus;	// true: locked, false: not locked
+	HashMap<String, Boolean> dataStatus;	// true: locked, false: unlocked
 
 	public StateMachine()
 	{
@@ -30,22 +32,22 @@ public class StateMachine
 		Boolean status;
 		
 		cmd.trim();
-		if (cmd.startsWith("lock(")) {
+		if (cmd.startsWith("lock")) {
 			var = getVariable(cmd);
 			
 			if (dataStatus.get(var) == null) {
 				dataStatus.put(var, true);
-				result = cmd + " succeeds."; 
+				result = cmd + " success."; 
 			} else {
 				status = dataStatus.get(var);
 				if (!status) {
-					status = true;
-					result = cmd + " succeeds.";
+					dataStatus.put(var, true);
+					result = cmd + " success.";
 				} else {
-					result = cmd + " fails. " + var + " is already locked.";
+					result = cmd + " failed. " + var + " is already locked.";
 				}
 			}
-		} else if (cmd.startsWith("unlock(")) {
+		} else if (cmd.startsWith("unlock")) {
 			var = getVariable(cmd);
 			
 			if (dataStatus.get(var) == null) {
@@ -54,11 +56,23 @@ public class StateMachine
 			} else {
 				status = dataStatus.get(var);
 				if (status) {
-					status = false;
-					result = cmd + " succeeds.";
+					result = cmd + " success.";
+					dataStatus.put(var, false);
 				} else
 					result = var + " is not locked.";
 			}
+		} else if (cmd.startsWith("status")) {
+			Iterator iter = dataStatus.entrySet().iterator();
+			StringBuilder str = new StringBuilder(1024);
+			while (iter.hasNext()) {
+				Entry entry = (Entry)iter.next();
+				str.append(entry.getKey() + "\t");
+				if ((Boolean)entry.getValue())
+					str.append("locked\n");
+				else
+					str.append("unlocked\n");
+			}
+			result = str.toString();
 		} else
 			result = "Unknown command. Ignore.";
 		
@@ -67,7 +81,7 @@ public class StateMachine
 
 	public void input(int instanceID, String consensus) 
 	{
-		System.out.println("   state machine input: " + instanceID + " " + consensus);
+		System.out.println("   state machine input: #" + instanceID + " " + consensus);
 		String result;
 		
 		if (instanceID > highestInsID)
@@ -79,7 +93,7 @@ public class StateMachine
 				// roll the machine()
 				result = commitCommand(inputs.get(nextProcessInsID));
 				outputs.put(nextProcessInsID, result);
-				System.out.println("   state machine output: " + nextProcessInsID + " " + result);
+				System.out.println("   state machine output: #" + nextProcessInsID + " " + result);
 				++nextProcessInsID;
 			}
 		System.out.println("   highest " + highestInsID + " nextProcessID " + nextProcessInsID);

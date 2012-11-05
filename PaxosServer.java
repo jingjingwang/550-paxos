@@ -112,7 +112,7 @@ public class PaxosServer
 			System.out.println(tmpID + "\t" + tmpAns);
 			if (tmpAns != null)
 			{
-				addIntoWriteQueue(pendingToAnswer.get(0).clientCommand.key, tmpAns); 
+				addIntoWriteQueue(pendingToAnswer.get(0).clientCommand.key, tmpAns + '\n'); 
 				pendingToAnswer.remove();
 			}
 			else
