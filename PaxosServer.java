@@ -53,6 +53,7 @@ public class PaxosServer
 	private static int cntInsID = 1;
 	private static int cntNumClient = 0;
 	private static int cntNumServer = 0;
+	private static int localClientID = 0;
 
 	private static ExtendedHashMap<Integer, Integer> numAccepted = new ExtendedHashMap<Integer, Integer>(0);
 	private static ExtendedHashMap<Integer, Integer> numPrepareResponse = new ExtendedHashMap<Integer, Integer>(0);
@@ -178,11 +179,13 @@ public class PaxosServer
 		}
 	}
 
-	public static void newClientRequest(ClientCommand cmd)
+	public static void newClientRequest(String str, SelectionKey key) //(ClientCommand cmd)
 	{
 		outputDebuggingInfo("new client request" , 1);
-		cmd.key.interestOps(cmd.key.interestOps() ^ SelectionKey.OP_READ);
-		clientRequestQueue.add(cmd);
+		String tmp = (String)(key.attachment());
+		str = str + ":" + tmp.substring(tmp.indexOf("_")+1);
+		key.interestOps(key.interestOps() ^ SelectionKey.OP_READ);
+		clientRequestQueue.add(new ClientCommand(str, key));
 		if (!proposed)
 			tryPropose();
 	}
@@ -510,7 +513,7 @@ public class PaxosServer
 	    		{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
-				newConn.register(selector, SelectionKey.OP_READ).attach("client"); 
+				newConn.register(selector, SelectionKey.OP_READ).attach("client_" + (localClientID++)); 
 				cntNumClient++;
 				outputDebuggingInfo("new client: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort(), 1);
 			}
@@ -641,7 +644,7 @@ public class PaxosServer
 			else // read from a real client
 			{
 				if (command.length() > 0)
-					newClientRequest(new ClientCommand(command, selKey));
+					newClientRequest(command, selKey);
 			}
 	    	}
 	    	if (selKey.isValid() && selKey.isWritable()) 
