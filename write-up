@@ -1,7 +1,25 @@
 1. How to use our implementation
 
 1.1 How to launch the service/servers
-    please see README.TXT
+
+if you want a fresh start instead of restarting a crashed node, don't forget to delete all the checkpointing files before launching! A simple "rm 550*" will work. If you want to restart a crashed node, don't need to do anything.
+
+You could either launch servers one by one, by:
+java PaxosServer [serverID (starts from 0)] [numOfServers]
+e.g.
+java PaxosServer 0 3
+will launch server 0 in totally 3 servers
+
+or
+
+You could launch multiply servers together by:
+java LockService [numOfServers]
+e.g.
+java LockService 3
+will launch 3 servers
+
+The first approach is more easy to check running status, inputs, outputs, etc.
+The second approach is more convenient for launching multiply servers.
 
 1.2 All the configurations that you can change
     please check the first few lines in the class PaxosServer. These are all the arguments that you can specify to control the whole service, and are well-commented with their functionalities. If you want to change the configuration, please save and recompile it.
@@ -9,7 +27,7 @@
 1.3 As a client
     please use telnet to connect to one of the servers, with specified ip address + port number. e.g.
     telnet 127.0.0.1 4139
-    Our current assumption is, servers are always running on 127.0.0.1. It will not affect paxos if we want to change it to multiple machines with different ips in the future, but currently we are not working on it. So when a client tries to connect to a server, make sure the ip address is 127.0.0.1 and the port number is within [clientPortBase, clientPortBase + numServer). The port number will be used to identify a specific serverID. 
+    Our current assumption is, servers are always running on 127.0.0.1. It will not affect paxos if we want to change it to multiple machines with different ips in the future, but currently we are not working on it. So when a client tries to connect to a server, make sure the ip address is 127.0.0.1 and the port number is within [clientPortBase, clientPortBase + numServer). In the above example, if the clientPortBase is 4139, then 4139 means the server 0, 4140 means the server 1, and so on. 
 
 
 
@@ -19,11 +37,11 @@
     In our design, each server is a process with a single thread. We chose processes because we want them to be independent of each other so that they could be deployed to a real cluster. We used single thread because there is no need to use multiple threads if non-blocking I/O is being used.
     
 2.2 How servers (and clients) connect to each other
-    We do it in a dynamic way. Each server has a ServerSocket, which listen to other servers' requests. Each time when a new server is launched, it tries to send connecting requests to all the servers, with its own server ID written if the connection is established, and its own ServerSocket also opens. In this way, all the existing servers will be notified that a new server just joined, with its unique server ID, so these existing servers are going to try to connect to the new server. In the end, all the servers know each other and which socket they should use to talk to each other.
-    This dynamic way also helps fault-tolerance, where if a node crashes and then recovers, it just need to treat itself as a newly joined server with its unchanged ID. Other servers are going to get the notification and rebuild the connection again. 
+    We do it in a dynamic way. Each server has a ServerSocket, which listen to other servers' requests. Each time when a new server is launched, it tries to send connect requests to all the servers, with its own server ID written if the connection is established, and its own ServerSocket also opens. In this way, all the existing servers will be notified that a new server just joined, with its unique server ID, so these existing servers are going to try to connect to the new server. In the end, all the servers know each other and which socket they should use to talk to each other.
+    This dynamic way also helps fault-tolerance, where if a node crashes and then recovers, it just need to treat itself as a newly joined server with its unchanged ID. Other servers are going to get the notification and rebuild the connection again.
     If, at any time, that a server finds out the connection to another server is broken, then it will remove that connection from its connection set. The same happens to clients, where if a server finds out a client has left, the connection is also removed.
 
-2.3 How does a server receive and process messgaes
+2.3 How does a server receive and process messages
     We use non-blocking I/O model thoroughly. Each server has a set of connections(socket channels in JAVA) that it cares about. These connections include: a listening socket for accepting other servers, a listening socket for accepting clients, connections to other servers and connections to clients. In the beginning, we only care about the "able to read" status (SelectionKey.OP_READ in JAVA). There is a write buffer for each of the connection, where outputs to that socket are buffered. We only care about the "able to write" (SelectionKey.OP_WRITE) iff there is something to write to that socket. For a connection to a client, once a request is read, we block the OP_READ message until we respond to that client. In this way, servers are able to send and receive informations in a totally non-blocking way.
 
 2.4 Responsibilties of the three roles: Proposer, Acceptor, Learner
@@ -32,16 +50,18 @@
     The proposal number is random generated within a range incrementally. After the proposal number and content are determined, the remaining job of a proposer is basically the standard definition in Paxos. A little variation is, if a proposer knows it's been chosen, it will treat itself as the distinguished learner also, broadcasting the chosen value to everyone. 
     Acceptor: the job of an acceptor is basically the same as in Paxos. It has several states to be updated, e.g. the highest accepted proposal number. It only needs to respond to requests based on these states, and update them.
     Learner: we made the chosen proposer as the distinguished learner. Other learners simply receive the "chosen" message, send the value to the state machine, and try to start a new round.
+    Please check the code if you want more details.
 
 2.5 The state machine
-	State machine gets input, or client's command, from the paxos consensus result, which is learnt by learner. Once state machine gets input, it will run the command if all instance before have already been run. All the results are polled by paxos server. Since multiple paxos instances are running, each time state machine gets a consensus result, it will try to run as many commands as possible.
-	Inside state machine, it allocates a lock to each variable. Each lock has a waiting queue. If a client tries to lock a locked variable, the corresponding lock will push the client into waiting queue. Once the variable is unlocked, lock will pop out the first client in the queue and use a callback function, registered when lock is created, to return the result. Besides, the lock will check the current owner. If a client try to unlock a variable which is not locked before by him, the lock will decline this request.
-	The state machine supports three command: 
-		lock(var): Lock the variable,
-		unlock(var): Unlock the variable,
-		status: Check the current status of all variables.
+    State machine gets input, or client's command, from the paxos consensus result, which is learnt by learner. Once state machine gets input, it will run the command if all instance before have already been run. All the results are polled by paxos server. Since multiple paxos instances are running, each time state machine gets a consensus result, it will try to run as many commands as possible.
+    Inside state machine, it allocates a lock to each variable. Each lock has a waiting queue. If a client tries to lock a locked variable, the corresponding lock will push the client into waiting queue. Once the variable is unlocked, lock will pop out the first client in the queue and use a callback function, registered when lock is created, to return the result. Besides, the lock will check the current owner. If a client try to unlock a variable which is not locked before by him/her, the lock will decline this request.
+    The state machine supports three command: 
+    lock(var): Lock the variable,
+    unlock(var): Unlock the variable,
+    status: Check the current status of all variables.
 
 2.6 Fault-Tolerance
     There are two aspects of fault-tolerance in our systems. 
-    The first one is changing the package loss rate, even for different types of messages. By losing a certain percentage of packages, our system is still able to proceed correctly. For achieving this, we have other two messages besidlxes normal ones in Paxos: ask and answer. If a node finds out it's falling behind the highest instance ID it has seen for a certain number, then it knows something is missing and then ask other nodes. If a node receives an "ask" message, it tries to respond if it knows the chosen value of the instance being asked. If a node receives the answer, it also sends the value to the state machine, just like learning a chosen value. Finally, if a node received no message for a certain amount of time (e.g. because of a heavy package loss), it will try to propose the same value for the same instance again. These techniques will guarantee the progress even having a large loss rate.
-    The second one is checkpointing for crashed nodes. Each time when a state is modified (e.g. the highest accepted proposal number), the whole state is dumped to a stable storage (called 550paxos-[serverID].checkpoint). So if a node crashes, we have: 1. the correctness is still guaranteed, 2. the progress is guaranteed if we still have the majority number of nodes alive, and 3. by restarting this failed node, the state is recovered by reading the checkpoint, rebuilding the state and asking other nodes. 
+    The first one is changing the package loss rate, even for different types of messages. By losing a certain percentage of packages, our system is still able to proceed correctly. For achieving this, we have other two messages beside normal ones in Paxos: ask and answer. If a node finds out it's falling behind the highest instance ID it has seen for a certain number, then it knows something is missing and then ask other nodes. If a node receives an "ask" message, it tries to respond if it knows the chosen value of the instance being asked. If a node receives the answer, it also sends the value to the state machine, just like learning a chosen value. Finally, if a node received no message for a certain amount of time (e.g. because of a heavy package loss), it will try to propose the same value for the same instance again. These techniques will guarantee the progress even having a high loss rate.
+    The second one is checkpointing for crashed nodes. Each time when a state is modified (e.g. the highest accepted proposal number), the whole state is dumped to a stable storage (called 550paxos-[serverID].checkpoint). So if a node crashes, we have: 1. the correctness is still guaranteed, 2. the progress is guaranteed if we still have the majority number of nodes alive, and 3. by restarting this failed node, the state is recovered by reading the checkpoint, rebuilding the state and asking other nodes. Just don't forget to delete all the files (rm 550*) if you want a fresh start!
+    One potential issue is the frequency of checkpointing. For this homework we checkpoint everything as soon as an update occurred. However the overhead of this strategy is going to be huge for a real distributed big system.
