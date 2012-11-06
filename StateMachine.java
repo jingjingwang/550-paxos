@@ -1,82 +1,206 @@
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.Map.Entry;
 
 public class StateMachine
 {
+	
+	public class Client {
+		int serverID;
+		int clientID;
+		int insNum;
+		
+		@Override
+		public String toString() {
+			return (serverID + ":" + clientID);
+		}
+	}
+	
+	public class Command {
+		static public final int LOCK = 0;
+		static public final int UNLOCK = 1;
+		static public final int STATUS = 2;
+		static public final int UNKNOWN = 3;
+		
+		public String input;
+		public String output;
+		
+		public int type;	// 0: lock, 1: unlock, 2: status, 3: unknown
+		public String var;
+		public Client client;
+		
+		public Command(String cmd, int insNum) {
+			cmd.trim();
+			
+			input = cmd;
+			output = null;
+			client = new Client();
+			client.insNum = insNum;
+			client.serverID = parseServerID(cmd);
+			client.clientID = parseClientID(cmd);
+			
+			if (cmd.startsWith("lock")) {
+				type = Command.LOCK;
+				var = parseVariable(cmd);
+			} else if (cmd.startsWith("unlock")) {
+				type = Command.UNLOCK;
+				var = parseVariable(cmd);
+			} else if (cmd.startsWith("status")) {
+				type = Command.STATUS;
+			} else
+				type = Command.UNKNOWN;
+		}
+		
+		private String parseVariable(String cmd) {
+			int beginIndex = cmd.indexOf('(') + 1;
+			int endIndex = cmd.lastIndexOf(')');
+			return cmd.substring(beginIndex, endIndex).trim();
+		}
+		
+		private int parseServerID(String cmd) {
+			int beginIndex = cmd.indexOf(':') + 1;
+			int endIndex = cmd.lastIndexOf(':');
+			return Integer.parseInt(cmd.substring(beginIndex, endIndex));
+		}
+		
+		private int parseClientID(String cmd) {
+			int beginIndex = cmd.lastIndexOf(':') + 1;
+			return Integer.parseInt(cmd.substring(beginIndex));
+		}
+	}
+	
+	public interface Visitor {
+		void notify(Client c);
+	}
+	
+	public class Lock {
+		
+		boolean isLocked;
+		Client lockOwner;
+		Visitor visitor;
+		LinkedList<Client> waitingList;
+		
+		public Lock(Visitor v) {
+			visitor = v;
+			isLocked = false;
+			lockOwner = null;
+			waitingList = new LinkedList<Client>();
+		}
+		
+		public boolean requireLock(Client client) {
+			if (!isLocked) {
+				isLocked = true;
+				lockOwner = client;
+				return true;
+			} else {
+				waitingList.push(client);
+				return false;
+			}
+		}
+		
+		public boolean releaseLock(Client client) {
+			if (client.serverID == lockOwner.serverID && client.clientID == lockOwner.clientID) {
+				if (waitingList.size() > 0) {
+					lockOwner = waitingList.pop();
+					visitor.notify(lockOwner);
+				} else {
+					isLocked = false;
+					lockOwner = null;
+				}
+				return true;
+			} else
+				return false;
+		}
+		
+		@Override
+		public String toString() {
+			String ret;
+			if (isLocked) {
+				ret = "locked by client " + lockOwner;
+				
+				if (waitingList.size() > 0) {
+					ret += ", waiting by ";
+					Iterator iter = waitingList.iterator();
+					Client c = (Client)iter.next();
+					ret += c;
+					
+					while (iter.hasNext()) {
+						c = (Client)iter.next();
+						ret += ", " + c;
+					}
+				}
+			} else
+				ret = "unlocked";
+			
+			return ret;
+		}
+	}
+	
 	public int nextProcessInsID = 1; 
 	public int highestInsID = 0; 
 
-	HashMap<Integer, String> inputs;
-	HashMap<Integer, String> outputs;
-	HashMap<String, Boolean> dataStatus;	// true: locked, false: unlocked
+	HashMap<Integer, Command> inputs;
+	HashMap<String, Lock> lockMap;	
+	
+	Visitor visitor = new Visitor() {
+		public void notify(Client client) {
+			Command cmd = inputs.get(client.insNum);
+			cmd.output = cmd.input + " success.";
+			System.out.println(" state machine output: " + cmd.output);
+		}
+	};
 
 	public StateMachine()
 	{
-		inputs = new HashMap<Integer, String>();
-		outputs = new HashMap<Integer, String>();
-		dataStatus = new HashMap<String, Boolean>();
+		inputs = new HashMap<Integer, Command>();
+		lockMap = new HashMap<String, Lock>();
 	}
 	
-	private String getVariable(String cmd) {
-		int left = cmd.indexOf('(');
-		int right = cmd.indexOf(')');
+	private void commitCommand(Command cmd) {
 		
-		return cmd.substring(left + 1, right).trim();
-	}
-	
-	private String commitCommand(String cmd) {
+		Lock lock;
 		
-		String var;
-		String result;
-		Boolean status;
-		
-		cmd.trim();
-		if (cmd.startsWith("lock")) {
-			var = getVariable(cmd);
+		if (cmd.type == Command.LOCK) {
 			
-			if (dataStatus.get(var) == null) {
-				dataStatus.put(var, true);
-				result = cmd + " success."; 
+			if (lockMap.get(cmd.var) == null) {
+				lock = new Lock(visitor);
+				lockMap.put(cmd.var, lock);
+				lock.requireLock(cmd.client);
+				cmd.output = cmd.input + " success."; 
 			} else {
-				status = dataStatus.get(var);
-				if (!status) {
-					dataStatus.put(var, true);
-					result = cmd + " success.";
-				} else {
-					result = cmd + " failed. " + var + " is already locked.";
-				}
+				lock = lockMap.get(cmd.var);
+				if (lock.requireLock(cmd.client))
+					cmd.output = cmd.input + " success.";
 			}
-		} else if (cmd.startsWith("unlock")) {
-			var = getVariable(cmd);
 			
-			if (dataStatus.get(var) == null) {
-				dataStatus.put(var, false);
-				result = var + " is not locked.";
+		} else if (cmd.type == Command.UNLOCK) {
+			
+			if (lockMap.get(cmd.var) == null) {
+				lock = new Lock(visitor);
+				lockMap.put(cmd.var, lock);
+				cmd.output = cmd.var + " is not locked. Ignore.";
 			} else {
-				status = dataStatus.get(var);
-				if (status) {
-					result = cmd + " success.";
-					dataStatus.put(var, false);
-				} else
-					result = var + " is not locked.";
+				lock = lockMap.get(cmd.var);
+				if (lock.releaseLock(cmd.client))
+					cmd.output = cmd.input + " success.";
+				else
+					cmd.output = cmd.var + " is not owned by client. Ignore.";
 			}
-		} else if (cmd.startsWith("status")) {
-			Iterator iter = dataStatus.entrySet().iterator();
+			
+		} else if (cmd.type == Command.STATUS) {
+			Iterator iter = lockMap.entrySet().iterator();
 			StringBuilder str = new StringBuilder(1024);
 			while (iter.hasNext()) {
 				Entry entry = (Entry)iter.next();
-				str.append(entry.getKey() + "\t");
-				if ((Boolean)entry.getValue())
-					str.append("locked\n");
-				else
-					str.append("unlocked\n");
+				str.append(entry.getKey() + "  " + ((Lock)entry.getValue()).toString() + "\n");
 			}
-			result = str.toString();
+			cmd.output = str.toString();
 		} else
-			result = "Unknown command. Ignore.";
+			cmd.output = "Unknown command. Ignore.";
 		
-		return result;
+		if (cmd.output != null)
+			System.out.println(" state machine output: " + cmd.output);
 	}
 
 	public void input(int instanceID, String consensus) 
@@ -86,32 +210,33 @@ public class StateMachine
 		if (instanceID > highestInsID)
 			highestInsID = instanceID;
 		System.out.println(" state machine input: #" + instanceID + " " + consensus);
-		inputs.put(instanceID, consensus);
+		
+		Command cmd = new Command(consensus, instanceID);
+		inputs.put(instanceID, cmd);
+		
 		if (instanceID == nextProcessInsID)
 			while (inputs.get(nextProcessInsID) != null)
 			{
 				// roll the machine()
-				String result = commitCommand(inputs.get(nextProcessInsID));
-				outputs.put(nextProcessInsID, result);
-				System.out.println(" state machine output: #" + nextProcessInsID + " " + result);
+				commitCommand(inputs.get(nextProcessInsID));
 				++nextProcessInsID;
 			}
 		System.out.println(" nextProcessID " + nextProcessInsID);
 		System.out.print(" ");
 		for (int i = 1; i <= highestInsID; ++i)
-			System.out.print(inputs.get(i) + "\t");
+			System.out.print(inputs.get(i).input + "\t");
 		System.out.println();
 	}
 
 	public String getInput(int instanceID)
 	{
 		if (inputs.get(instanceID) != null)
-			return inputs.get(instanceID);
+			return inputs.get(instanceID).input;
 		return "none";
 	}
 
 	public String getOutput(int instanceID)
 	{
-		return outputs.get(instanceID);
+		return inputs.get(instanceID).output;
 	}
 }
