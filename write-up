@@ -33,6 +33,12 @@
     Learner:
 
 2.5 The state machine
+	State machine gets input, or client's command, from the paxos consensus result, which is learnt by learner. Once state machine gets input, it will run the command if all instance before have already been run. All the results are polled by paxos server. Since multiple paxos instances are running, each time state machine gets a consensus result, it will try to run as many commands as possible.
+	Inside state machine, it allocates a lock to each variable. Each lock has a waiting queue. If a client tries to lock a locked variable, the corresponding lock will push the client into waiting queue. Once the variable is unlocked, lock will pop out the first client in the queue and use a callback function, registered when lock is created, to return the result. Besides, the lock will check the current owner. If a client try to unlock a variable which is not locked before by him, the lock will decline this request.
+	The state machine supports three command: 
+		lock(var): Lock the variable,
+		unlock(var): Unlock the variable,
+		status: Check the current status of all variables.
 
 2.6 Fault-Tolerance
     There are two aspects of fault-tolerance in our systems. The first one is changing the package loss rate, even for different types of messages. By losing a certain percentage of packages, our system is still able to proceed correctly. The second one is checkpointing for crashed nodes. Each time when a state is modified (e.g. the highest accepted proposal number), the whole state is dumped to a stable storage (called 550paxos-[serverID].checkpoint). So if a node crashes, we have: 1. the correctness is still guaranteed, 2. the progress is guaranteed if we still have the majority number of nodes alive, and 3. by restarting this failed node, the state is recovered by reading the checkpoint and asking other nodes. 
