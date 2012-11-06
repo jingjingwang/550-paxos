@@ -16,6 +16,7 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.Charset;  
 import java.nio.CharBuffer;  
 import java.io.IOException;
+import java.io.FileNotFoundException;
 import java.io.File;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -31,10 +32,10 @@ public class PaxosServer
 	private static final int clientPortBase = 4139;
 	private static final int MaxClientNum = 100;
 	private static final int MaxServerNum = 20;
-	private static final int MaxConnNum = 100;
 	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
 	private static final long MaxWaitingSelectTime = 50;
+	private static int highestInsID = 1;
 	private static final double GeneralLossRate = 0.4;
 	private static final double PrepareLossRate = GeneralLossRate;
 	private static final double RePrepareLossRate = GeneralLossRate;
@@ -52,7 +53,6 @@ public class PaxosServer
 	private static int cntInsID = 1;
 	private static int cntNumClient = 0;
 	private static int cntNumServer = 0;
-	private static int highestInsID = 1;
 
 	private static ExtendedHashMap<Integer, Integer> numAccepted = new ExtendedHashMap<Integer, Integer>(0);
 	private static ExtendedHashMap<Integer, Integer> numPrepareResponse = new ExtendedHashMap<Integer, Integer>(0);
@@ -63,12 +63,35 @@ public class PaxosServer
 	private static ExtendedHashMap<Integer, Integer> highestRespondedPropNum = new ExtendedHashMap<Integer, Integer>(-1);
 	
 	private static StateMachine stateMachine = new StateMachine();
+	private static BufferedWriter debuggingLog;
+	private static int loggingLevel = 1;
 
 	private static Selector selector;
 	private static LinkedList<ClientCommand> clientRequestQueue = new LinkedList<ClientCommand>();
 	private static HashSet<SelectionKey> connAsClient = new HashSet<SelectionKey>();
 	private static LinkedList<PendingAnswer> pendingToAnswer = new LinkedList<PendingAnswer>();
 	private static HashMap<SelectionKey, LinkedList<String> > writeQueue = new HashMap<SelectionKey, LinkedList<String> >();
+
+	private static void outputDebuggingInfo(String str, int level)
+	{
+		try
+		{
+
+		if (level == 0)
+			System.out.println(str);
+		if (level <= loggingLevel)
+		{
+			debuggingLog.write(str);
+			debuggingLog.newLine();
+			debuggingLog.flush();
+		}
+
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+		}
+	}
 
 	private static void newRoundInit()
 	{
@@ -89,7 +112,7 @@ public class PaxosServer
 			if (getCntRequest() != null && stateMachine.getInput(cntInsID).equals(getCntRequest())) 
 			// the value is successfully chosen, move to the next request
 			{
-				System.out.println("add pendig answer " + cntInsID + " " + clientRequestQueue.get(0).command);
+				outputDebuggingInfo("add pendig answer " + cntInsID + " " + clientRequestQueue.get(0).command, 2);
 				pendingToAnswer.add(new PendingAnswer(clientRequestQueue.get(0), cntInsID));
 				clientRequestQueue.remove();
 				checkPendingAnswer();
@@ -104,14 +127,13 @@ public class PaxosServer
 
 	public static void checkPendingAnswer()
 	{
-		System.out.println("checkpendinganswer " + pendingToAnswer.size());
+		outputDebuggingInfo("checkpendinganswer " + pendingToAnswer.size(), 2);
 		while (pendingToAnswer.size() > 0)
 		{
 			int tmpID = pendingToAnswer.get(0).insID;
 			String tmpAns = stateMachine.getOutput(tmpID);
 			if (tmpAns != null)
 			{
-				System.out.println(tmpID + "\t" + tmpAns);
 				addIntoWriteQueue(pendingToAnswer.get(0).clientCommand.key, tmpAns + '\n'); 
 				pendingToAnswer.remove();
 			}
@@ -131,7 +153,7 @@ public class PaxosServer
 	{
 		if (flyingInsID - stateMachine.nextProcessInsID >= MaxWaitingRound)
 		{
-			//System.out.println("asking from " + stateMachine.nextProcessInsID + " to " + (flyingInsID-1));
+			outputDebuggingInfo("asking from " + stateMachine.nextProcessInsID + " to " + (flyingInsID-1), 2);
 			for (int i = stateMachine.nextProcessInsID; i < flyingInsID; ++i)
 				if (stateMachine.getInput(i).equals("none"))
 					broadcastToAllServers(extendCommand(cntInsID, "ask " + i));
@@ -147,10 +169,10 @@ public class PaxosServer
 
 	public static void tryPropose()
 	{
-		//System.out.println("tryPropose");
+		outputDebuggingInfo("tryPropose", 1);
 		if (clientRequestQueue.size() > 0)
 		{
-			//System.out.println("has sth, going to propose");
+			outputDebuggingInfo("has sth, going to propose", 1);
 			proposed = true;
 			broadcastToAllServers(extendCommand(cntInsID, "prepare " + cntPropNum + " " + getCntRequest()));
 		}
@@ -158,7 +180,7 @@ public class PaxosServer
 
 	public static void newClientRequest(ClientCommand cmd)
 	{
-		//System.out.println("new client request");
+		outputDebuggingInfo("new client request" , 1);
 		cmd.key.interestOps(cmd.key.interestOps() ^ SelectionKey.OP_READ);
 		clientRequestQueue.add(cmd);
 		if (!proposed)
@@ -189,7 +211,6 @@ public class PaxosServer
     		ServerSocketChannel ssChannel = ServerSocketChannel.open();
     		ssChannel.configureBlocking(false);
     		ssChannel.socket().bind(new InetSocketAddress(port));
-		//System.out.println("server socket bind " + port);
 		return ssChannel;
 
 		}
@@ -277,7 +298,7 @@ public class PaxosServer
 			}
 			if (hasRead >= cmdLength)
 			{
-				//System.out.println("client command too long!");
+				outputDebuggingInfo("client command too long!", 0);
 				break;
 			}
 			single.clear();
@@ -294,8 +315,7 @@ public class PaxosServer
 		}
 		catch (Exception e)
 		{
-			//e.printStackTrace();
-			System.out.println("client connection closed, read");
+			outputDebuggingInfo("client connection closed, read", 1);
 			removeConnection(key);
 			return "";
 		}
@@ -305,6 +325,7 @@ public class PaxosServer
 	{
 		if (!key.isValid())
 			return;
+		outputDebuggingInfo("writing " + cmd, 1);
   		try
 		{
 
@@ -324,8 +345,7 @@ public class PaxosServer
 		}
 		catch (Exception e)
 		{
-			//e.printStackTrace();
-			System.out.println("connection closed, write");
+			outputDebuggingInfo("connection closed, write", 1);
 			removeConnection(key);
 		}
 	}
@@ -334,7 +354,7 @@ public class PaxosServer
 	{
 		if (!key.isValid())
 			return;
-		//System.out.println("addintowritequeue " + indx + " " + command);
+		outputDebuggingInfo("addintowritequeue " + command, 2);
 		if (writeQueue.get(key) == null)
 			writeQueue.put(key, new LinkedList<String>());
 		writeQueue.get(key).add(command);
@@ -346,7 +366,7 @@ public class PaxosServer
 		if (key.isValid() && writeQueue.get(key).size() == 1)
 			key.interestOps(key.interestOps() ^ SelectionKey.OP_WRITE);
 		String command = writeQueue.get(key).remove();
-		//System.out.println("popfromwritequeue " + indx + " " + command);
+		outputDebuggingInfo("popfromwritequeue " + command, 2);
 		return command;
 	}
 
@@ -358,10 +378,9 @@ public class PaxosServer
 		String filename = "550paxos-" + serverID + ".checkpoint";
 		BufferedReader reader = new BufferedReader(new FileReader(new File(filename)));
 		String line;
-		// how to read state machine's internal state?
 		while ((line = reader.readLine()) != null)
 		{
-			System.out.println(line);
+			outputDebuggingInfo(line, 1);
 			String[] items = line.split("\t");
 			int insID = Integer.parseInt(items[0]);
 			highestAcceptedPropNum.putInt(insID, Integer.parseInt(items[1]));
@@ -374,7 +393,11 @@ public class PaxosServer
 			stateMachine.input(insID, items[8]);
 		}
 		highestInsID = stateMachine.highestInsID;
+		outputDebuggingInfo("load checkpoint done", 2);
 
+		}
+		catch (FileNotFoundException e)
+		{
 		}
 		catch (Exception e)
 		{
@@ -389,7 +412,6 @@ public class PaxosServer
 
 		String filename = "550paxos-" + serverID + ".checkpoint";
 		BufferedWriter writer = new BufferedWriter(new FileWriter(new File(filename)));
-		// how to dump state machine's internal state?
 		for (int i = 1; i <= highestInsID; ++i)
 		{
 			writer.write(i + "\t" + 
@@ -403,8 +425,8 @@ public class PaxosServer
 				     stateMachine.getInput(i));
 			writer.newLine();
 		}
-		writer.flush();
 		writer.close();
+		outputDebuggingInfo("dump checkpoint done", 2);
 
 		}
 		catch (Exception e)
@@ -415,15 +437,16 @@ public class PaxosServer
 
 	public static void main(String[] args) 
 	{
+		try 
+		{
+
 		serverID = Integer.parseInt(args[0]);
 		numServer = Integer.parseInt(args[1]);
 		numMajority = numServer / 2 + 1;
-		//System.out.println("Server No." + serverID + " launched.");
+		debuggingLog = new BufferedWriter(new FileWriter(new File("550paxos-" + serverID + ".debugginglog")));
+		outputDebuggingInfo("Server No." + serverID + " launched.", 0);
 		
 		loadCheckpoint();
-
-		try 
-		{
 
 		selector = Selector.open();
 		ServerSocketChannel listenChannel_server = createServerSocketChannel(serverPortBase + serverID);
@@ -432,7 +455,6 @@ public class PaxosServer
 		listenChannel_client.register(selector, SelectionKey.OP_ACCEPT).attach("listen_client");
 
 		connectToOtherServer();
-		//System.out.println("registration done");
 		newRoundInit();
 
 		while (true) 
@@ -456,8 +478,7 @@ public class PaxosServer
 				dumpCheckpoint();
 				keyIter.remove();
 		    	}
-			//System.out.println("------ one selection --------");
-			long cntTime = System.currentTimeMillis();
+			outputDebuggingInfo("------ one selection ------", 2);
 			if (numChanged == 0 && proposed)
 				//waited so long, trying to propose again
 				newRoundInit();
@@ -473,17 +494,17 @@ public class PaxosServer
 	public static void processSelectionKey(SelectionKey selKey) throws IOException 
 	{
 		String tag = (String)selKey.attachment();
-		//System.out.println("processing key indx = " + indx);
+		outputDebuggingInfo("processing key ", 2);
 	    	if (selKey.isValid() && selKey.isAcceptable())
 		{
-			//System.out.println("acceptable");
-			//System.out.println("new client connection: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort());
+			outputDebuggingInfo("acceptable", 1);
 			if (tag.equals("listen_server") && cntNumServer < MaxServerNum) 
 			{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("paxos_as_server"); 
 				cntNumServer++;
+				outputDebuggingInfo("new server: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort(), 1);
 			}
 			if (tag.equals("listen_client") && cntNumClient < MaxClientNum)
 	    		{
@@ -491,21 +512,19 @@ public class PaxosServer
 				newConn.configureBlocking(false); 
 				newConn.register(selector, SelectionKey.OP_READ).attach("client"); 
 				cntNumClient++;
+				outputDebuggingInfo("new client: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort(), 1);
 			}
 	    	}
 	    	if (selKey.isValid() && selKey.isReadable()) 
 		{
 			String command = readFromSocketChannel(selKey);
-			System.out.println("readable " + command);
+			outputDebuggingInfo("readable " + command, 1);
 			if (command.equals(""))
 				return;
 
 			if (tag.startsWith("paxos")) // read from another server
 			{
 				int flyingInsID = Integer.parseInt(getField(command, -1));
-				//System.out.println("flying instance ID = " + flyingInsID + " " + cntInsID + " " + highestInsID + " " + stateMachine.nextProcessInsID);
-				//if (flyingInsID > cntInsID)
-				//	System.out.println("Some One is Falling Behind!"); 
 				if (command.startsWith("prepare"))
 				{
 					if (Math.random() < PrepareLossRate)
@@ -627,7 +646,7 @@ public class PaxosServer
 	    	}
 	    	if (selKey.isValid() && selKey.isWritable()) 
 		{
-			//System.out.println("writeable");
+			outputDebuggingInfo("writeable", 2);
 			SocketChannel sChannel = (SocketChannel)selKey.channel();
 			writeToSocketChannel(selKey, popFromWriteQueue(selKey));
 			selKey.interestOps(selKey.interestOps() | SelectionKey.OP_READ);
@@ -637,7 +656,7 @@ public class PaxosServer
 	public static String extendCommand(int insID, String s)
 	{
 		s = s + " " + insID + "#";
-		System.out.println("extend command " + s);
+		outputDebuggingInfo("extending command " + s, 2);
 		return s;
 	}
 

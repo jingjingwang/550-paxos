@@ -81,22 +81,23 @@ public class StateMachine
 
 	public void input(int instanceID, String consensus) 
 	{
-		System.out.println("   state machine input: #" + instanceID + " " + consensus);
-		String result;
-		
+		if (inputs.get(instanceID) != null)
+			return;
 		if (instanceID > highestInsID)
 			highestInsID = instanceID;
+		System.out.println(" state machine input: #" + instanceID + " " + consensus);
 		inputs.put(instanceID, consensus);
 		if (instanceID == nextProcessInsID)
 			while (inputs.get(nextProcessInsID) != null)
 			{
 				// roll the machine()
-				result = commitCommand(inputs.get(nextProcessInsID));
+				String result = commitCommand(inputs.get(nextProcessInsID));
 				outputs.put(nextProcessInsID, result);
-				System.out.println("   state machine output: #" + nextProcessInsID + " " + result);
+				System.out.println(" state machine output: #" + nextProcessInsID + " " + result);
 				++nextProcessInsID;
 			}
-		System.out.println("   highest " + highestInsID + " nextProcessID " + nextProcessInsID);
+		System.out.println(" nextProcessID " + nextProcessInsID);
+		System.out.print(" ");
 		for (int i = 1; i <= highestInsID; ++i)
 			System.out.print(inputs.get(i) + "\t");
 		System.out.println();
@@ -111,9 +112,6 @@ public class StateMachine
 
 	public String getOutput(int instanceID)
 	{
-		// temp
-		//return inputs.get(instanceID) + "\n";
-		
 		return outputs.get(instanceID);
 	}
 }
