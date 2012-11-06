@@ -35,7 +35,6 @@ public class PaxosServer
 	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
 	private static final long MaxWaitingSelectTime = 50;
-	private static int highestInsID = 1;
 	private static final double GeneralLossRate = 0.4;
 	private static final double PrepareLossRate = GeneralLossRate;
 	private static final double RePrepareLossRate = GeneralLossRate;
@@ -54,6 +53,7 @@ public class PaxosServer
 	private static int cntNumClient = 0;
 	private static int cntNumServer = 0;
 	private static int localClientID = 0;
+	private static int highestInsID = 1;
 
 	private static ExtendedHashMap<Integer, Integer> numAccepted = new ExtendedHashMap<Integer, Integer>(0);
 	private static ExtendedHashMap<Integer, Integer> numPrepareResponse = new ExtendedHashMap<Integer, Integer>(0);
@@ -129,17 +129,17 @@ public class PaxosServer
 	public static void checkPendingAnswer()
 	{
 		outputDebuggingInfo("checkpendinganswer " + pendingToAnswer.size(), 2);
-		while (pendingToAnswer.size() > 0)
+		for (int i = 0; i < pendingToAnswer.size(); )
 		{
-			int tmpID = pendingToAnswer.get(0).insID;
+			int tmpID = pendingToAnswer.get(i).insID;
 			String tmpAns = stateMachine.getOutput(tmpID);
 			if (tmpAns != null)
 			{
-				addIntoWriteQueue(pendingToAnswer.get(0).clientCommand.key, tmpAns + '\n'); 
-				pendingToAnswer.remove();
+				addIntoWriteQueue(pendingToAnswer.get(i).clientCommand.key, tmpAns + '\n'); 
+				pendingToAnswer.remove(i);
 			}
 			else
-				break;
+				++i;
 		}
 	}
 
