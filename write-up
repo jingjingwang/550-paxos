@@ -18,7 +18,7 @@
 2.1 The process model
     In our design, each server is a process with a single thread. We chose processes because we want them to be independent of each other so that they could be deployed to a real cluster. We used single thread because there is no need to use multiple threads if non-blocking I/O is being used.
     
-2.2 How servers connect to each other
+2.2 How servers (and clients) connect to each other
     We do it in a dynamic way. Each server has a ServerSocket, which listen to other servers' requests. Each time when a new server is launched, it tries to send connecting requests to all the servers, with its own server ID written if the connection is established, and its own ServerSocket also opens. In this way, all the existing servers will be notified that a new server just joined, with its unique server ID, so these existing servers are going to try to connect to the new server. In the end, all the servers know each other and which socket they should use to talk to each other.
     This dynamic way also helps fault-tolerance, where if a node crashes and then recovers, it just need to treat itself as a newly joined server with its unchanged ID. Other servers are going to get the notification and rebuild the connection again. 
     If, at any time, that a server finds out the connection to another server is broken, then it will remove that connection from its connection set. The same happens to clients, where if a server finds out a client has left, the connection is also removed.
@@ -28,9 +28,10 @@
 
 2.4 Responsibilties of the three roles: Proposer, Acceptor, Learner
     We didn't seperate these three roles as three classes in our design. Since the assumption is, each server serves all the three roles, we intergrated their jobs within a server's job.
-    Proposer: 
-    Acceptor:
-    Learner:
+    Proposer: when a request from a client is received, it's first put into a queue. A proposer will always try to propose the first request in this queue as the value of the current Paxos instance. If another value is chosen instead of this request, the proposer will try to propose this request again in the next instance. If this request is chosen, it will be removed from the queue, while the server will remember to respond to that client when the state machine is able to generate the answer (this process might be delayed because of package loss and the properties of locking). The proposer then moves to the next request and tried to propose.
+    The proposal number is random generated within a range incrementally. After the proposal number and content are determined, the remaining job of a proposer is basically the standard definition in Paxos. A little variation is, if a proposer knows it's been chosen, it will treat itself as the distinguished learner also, broadcasting the chosen value to everyone. 
+    Acceptor: the job of an acceptor is basically the same as in Paxos. It has several states to be updated, e.g. the highest accepted proposal number. It only needs to respond to requests based on these states, and update them.
+    Learner: we made the chosen proposer as the distinguished learner. Other learners simply receive the "chosen" message, send the value to the state machine, and try to start a new round.
 
 2.5 The state machine
 	State machine gets input, or client's command, from the paxos consensus result, which is learnt by learner. Once state machine gets input, it will run the command if all instance before have already been run. All the results are polled by paxos server. Since multiple paxos instances are running, each time state machine gets a consensus result, it will try to run as many commands as possible.
@@ -41,4 +42,6 @@
 		status: Check the current status of all variables.
 
 2.6 Fault-Tolerance
-    There are two aspects of fault-tolerance in our systems. The first one is changing the package loss rate, even for different types of messages. By losing a certain percentage of packages, our system is still able to proceed correctly. The second one is checkpointing for crashed nodes. Each time when a state is modified (e.g. the highest accepted proposal number), the whole state is dumped to a stable storage (called 550paxos-[serverID].checkpoint). So if a node crashes, we have: 1. the correctness is still guaranteed, 2. the progress is guaranteed if we still have the majority number of nodes alive, and 3. by restarting this failed node, the state is recovered by reading the checkpoint and asking other nodes. 
+    There are two aspects of fault-tolerance in our systems. 
+    The first one is changing the package loss rate, even for different types of messages. By losing a certain percentage of packages, our system is still able to proceed correctly. For achieving this, we have other two messages besidlxes normal ones in Paxos: ask and answer. If a node finds out it's falling behind the highest instance ID it has seen for a certain number, then it knows something is missing and then ask other nodes. If a node receives an "ask" message, it tries to respond if it knows the chosen value of the instance being asked. If a node receives the answer, it also sends the value to the state machine, just like learning a chosen value. Finally, if a node received no message for a certain amount of time (e.g. because of a heavy package loss), it will try to propose the same value for the same instance again. These techniques will guarantee the progress even having a large loss rate.
+    The second one is checkpointing for crashed nodes. Each time when a state is modified (e.g. the highest accepted proposal number), the whole state is dumped to a stable storage (called 550paxos-[serverID].checkpoint). So if a node crashes, we have: 1. the correctness is still guaranteed, 2. the progress is guaranteed if we still have the majority number of nodes alive, and 3. by restarting this failed node, the state is recovered by reading the checkpoint, rebuilding the state and asking other nodes. 
