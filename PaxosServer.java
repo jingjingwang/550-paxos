@@ -580,6 +580,9 @@ public class PaxosServer
 	    		{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
+				// we need to make requests from different clients & servers different, 
+				// even if they look the same like "lock(x)"
+				// the final value would be: lock(x):[serverID]:[localClientID]
 				newConn.register(selector, SelectionKey.OP_READ).attach("client_" + (localClientID++)); 
 				cntNumClient++;
 				outputDebuggingInfo("new client: " + newConn.socket().getInetAddress() + " " + newConn.socket().getPort(), 1);
