@@ -1,8 +1,38 @@
 1. How to use our implementation
+
 1.1 How to launch the service/servers
     please see README.TXT
+
 1.2 All the configurations that you can change
     please check the first few lines in the class PaxosServer. These are all the arguments that you can specify to control the whole service, and are well-commented with their functionalities. If you want to change the configuration, please save and recompile it.
 
+1.3 As a client
+    please use telnet to connect to one of the servers, with specified ip address + port number. e.g.
+    telnet 127.0.0.1 4139
+    Our current assumption is, servers are always running on 127.0.0.1. It will not affect paxos if we want to change it to multiple machines with different ips in the future, but currently we are not working on it. So when a client tries to connect to a server, make sure the ip address is 127.0.0.1 and the port number is within [clientPortBase, clientPortBase + numServer). The port number will be used to identify a specific serverID. 
+
+
+
 2. Detailed introduction of our design
 
+2.1 The process model
+    In our design, each server is a process with a single thread. We chose processes because we want them to be independent of each other so that they could be deployed to a real cluster. We used single thread because there is no need to use multiple threads if non-blocking I/O is being used.
+    
+2.2 How servers connect to each other
+    We do it in a dynamic way. Each server has a ServerSocket, which listen to other servers' requests. Each time when a new server is launched, it tries to send connecting requests to all the servers, with its own server ID written if the connection is established, and its own ServerSocket also opens. In this way, all the existing servers will be notified that a new server just joined, with its unique server ID, so these existing servers are going to try to connect to the new server. In the end, all the servers know each other and which socket they should use to talk to each other.
+    This dynamic way also helps fault-tolerance, where if a node crashes and then recovers, it just need to treat itself as a newly joined server with its unchanged ID. Other servers are going to get the notification and rebuild the connection again. 
+    If, at any time, that a server finds out the connection to another server is broken, then it will remove that connection from its connection set. The same happens to clients, where if a server finds out a client has left, the connection is also removed.
+
+2.3 How does a server receive and process messgaes
+    We use non-blocking I/O model thoroughly. Each server has a set of connections(socket channels in JAVA) that it cares about. These connections include: a listening socket for accepting other servers, a listening socket for accepting clients, connections to other servers and connections to clients. In the beginning, we only care about the "able to read" status (SelectionKey.OP_READ in JAVA). There is a write buffer for each of the connection, where outputs to that socket are buffered. We only care about the "able to write" (SelectionKey.OP_WRITE) iff there is something to write to that socket. For a connection to a client, once a request is read, we block the OP_READ message until we respond to that client. In this way, servers are able to send and receive informations in a totally non-blocking way.
+
+2.4 Responsibilties of the three roles: Proposer, Acceptor, Learner
+    We didn't seperate these three roles as three classes in our design. Since the assumption is, each server serves all the three roles, we intergrated their jobs within a server's job.
+    Proposer: 
+    Acceptor:
+    Learner:
+
+2.5 The state machine
+
+2.6 Fault-Tolerance
+    There are two aspects of fault-tolerance in our systems. The first one is changing the package loss rate, even for different types of messages. By losing a certain percentage of packages, our system is still able to proceed correctly. The second one is checkpointing for crashed nodes. Each time when a state is modified (e.g. the highest accepted proposal number), the whole state is dumped to a stable storage (called 550paxos-[serverID].checkpoint). So if a node crashes, we have: 1. the correctness is still guaranteed, 2. the progress is guaranteed if we still have the majority number of nodes alive, and 3. by restarting this failed node, the state is recovered by reading the checkpoint and asking other nodes. 
