@@ -5,7 +5,8 @@ import java.util.Map.Entry;
 
 public class StateMachine
 {
-	
+
+	// use [serverID:clientID] to uniquely address a client
 	public class Client {
 		int serverID;
 		int clientID;
@@ -17,6 +18,7 @@ public class StateMachine
 		}
 	}
 	
+	// Command format: [lock(x)/unlock(x)/status]:[server id]:[client id]
 	public class Command {
 		static public final int LOCK = 0;
 		static public final int UNLOCK = 1;
@@ -88,6 +90,9 @@ public class StateMachine
 			waitingList = new LinkedList<Client>();
 		}
 		
+		// require the lock
+		// true: require lock success
+		// false: lock is currently held, client will be appended in the waiting list
 		public boolean requireLock(Client client) {
 			if (!isLocked) {
 				isLocked = true;
@@ -99,6 +104,11 @@ public class StateMachine
 			}
 		}
 		
+		// release the lock
+		// if there are other clients in the waiting list, wake up the first one in the list by visitor
+		// return: 
+		// true means releasing success; 
+		// false means a client tries to release a lock that he hasn't held it
 		public boolean releaseLock(Client client) {
 			if (client.serverID == lockOwner.serverID && client.clientID == lockOwner.clientID) {
 				if (waitingList.size() > 0) {
@@ -143,6 +153,8 @@ public class StateMachine
 	HashMap<Integer, Command> inputs;
 	HashMap<String, Lock> lockMap;	
 	
+	// Call back function
+	// only occurs waking up a blocking lock operation
 	Visitor visitor = new Visitor() {
 		public void notify(Client client) {
 			Command cmd = inputs.get(client.insNum);
@@ -203,6 +215,7 @@ public class StateMachine
 			System.out.println(" state machine output: " + cmd.output);
 	}
 
+	// get input from paxos server
 	public void input(int instanceID, String consensus) 
 	{
 		if (inputs.get(instanceID) != null)
@@ -215,9 +228,10 @@ public class StateMachine
 		inputs.put(instanceID, cmd);
 		
 		if (instanceID == nextProcessInsID)
+			// run as many commands as possible
 			while (inputs.get(nextProcessInsID) != null)
 			{
-				// roll the machine()
+				// roll the machine
 				commitCommand(inputs.get(nextProcessInsID));
 				++nextProcessInsID;
 			}
@@ -235,6 +249,7 @@ public class StateMachine
 		return "none";
 	}
 
+	// passively output the result to paxos server
 	public String getOutput(int instanceID)
 	{
 		return inputs.get(instanceID).output;
