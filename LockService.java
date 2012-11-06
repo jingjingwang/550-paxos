@@ -34,7 +34,7 @@ public class LockService
 						break;
 				}
 			}
-			Thread.sleep(1000);
+			Thread.sleep(100);
 		}
 		}
 		catch (Exception e)
