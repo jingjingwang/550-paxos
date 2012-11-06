@@ -35,14 +35,14 @@ public class PaxosServer
 	private static final int cmdLength = 50;
 	private static final int MaxWaitingRound = 1;
 	private static final long MaxWaitingSelectTime = 50;
-	private static final double GeneralLostRate = 0.4;
-	private static final double PrepareLostRate = GeneralLostRate;
-	private static final double RePrepareLostRate = GeneralLostRate;
-	private static final double AcceptLostRate = GeneralLostRate;
-	private static final double ReAcceptLostRate = GeneralLostRate;
-	private static final double ChosenLostRate = GeneralLostRate;
-	private static final double AskLostRate = GeneralLostRate;
-	private static final double AnswerLostRate = GeneralLostRate;
+	private static final double GeneralLossRate = 0.4;
+	private static final double PrepareLossRate = GeneralLossRate;
+	private static final double RePrepareLossRate = GeneralLossRate;
+	private static final double AcceptLossRate = GeneralLossRate;
+	private static final double ReAcceptLossRate = GeneralLossRate;
+	private static final double ChosenLossRate = GeneralLossRate;
+	private static final double AskLossRate = GeneralLossRate;
+	private static final double AnswerLossRate = GeneralLossRate;
 
 	private static int serverID;
 	private static int numServer;
@@ -109,9 +109,9 @@ public class PaxosServer
 		{
 			int tmpID = pendingToAnswer.get(0).insID;
 			String tmpAns = stateMachine.getOutput(tmpID);
-			System.out.println(tmpID + "\t" + tmpAns);
 			if (tmpAns != null)
 			{
+				System.out.println(tmpID + "\t" + tmpAns);
 				addIntoWriteQueue(pendingToAnswer.get(0).clientCommand.key, tmpAns + '\n'); 
 				pendingToAnswer.remove();
 			}
@@ -135,8 +135,6 @@ public class PaxosServer
 			for (int i = stateMachine.nextProcessInsID; i < flyingInsID; ++i)
 				if (stateMachine.getInput(i).equals("none"))
 					broadcastToAllServers(extendCommand(cntInsID, "ask " + i));
-					//for (int j = 1; j <= numServer; ++j)
-					//	addIntoWriteQueue(j, );
 		}
 	}
 
@@ -147,11 +145,6 @@ public class PaxosServer
 		return clientRequestQueue.get(0).command;
 	}
 
-	//public static int getCntClientIndx()
-	//{
-	//	return (Integer)clientRequestQueue.get(0).key.attachment();
-	//}
-
 	public static void tryPropose()
 	{
 		//System.out.println("tryPropose");
@@ -160,8 +153,6 @@ public class PaxosServer
 			//System.out.println("has sth, going to propose");
 			proposed = true;
 			broadcastToAllServers(extendCommand(cntInsID, "prepare " + cntPropNum + " " + getCntRequest()));
-			//for (int i = 1; i <= numServer; ++i)
-			//	addIntoWriteQueue(i, );
 		}
 	}
 
@@ -211,7 +202,7 @@ public class PaxosServer
 
 	public static void connectToOtherServer()
 	{
-		for (int i = 0; i < numServer; ++i) // include itself
+		for (int i = 0; i < numServer; ++i) 
 			connectToOneServer(i, true);
 	}
 
@@ -303,49 +294,12 @@ public class PaxosServer
 		}
 		catch (Exception e)
 		{
-			e.printStackTrace();
+			//e.printStackTrace();
 			System.out.println("client connection closed, read");
 			removeConnection(key);
 			return "";
 		}
 	}
-
-	/*
-	private static String readFromSocketChannel(SelectionKey key) 
-	{
-		try
-		{
-
-		SocketChannel channel = (SocketChannel)key.channel();
-		ByteBuffer buffer = ByteBuffer.allocateDirect(cmdLength);
-		buffer.clear();
-
-		int hasRead = 0;
-		while (hasRead < cmdLength)
-		{
-			int justRead = channel.read(buffer);
-			if (justRead == -1) 
-			{
-				//System.out.println("server connection closed, read");
-				return "";
-			}
-			hasRead += justRead;
-		}
-
-		buffer.position(0);
-        	Charset charset = Charset.defaultCharset();  
-        	CharsetDecoder decoder = charset.newDecoder();  
-        	String s = decoder.decode(buffer).toString().trim();
-		return s;
-
-		}
-		catch (Exception e)
-		{
-			e.printStackTrace();
-		}
-		return null;
-	}
-	*/
 
 	private static void writeToSocketChannel(SelectionKey key, String cmd)
 	{
@@ -370,10 +324,9 @@ public class PaxosServer
 		}
 		catch (Exception e)
 		{
+			//e.printStackTrace();
 			System.out.println("connection closed, write");
-			//if ((Integer)(key.attachment()) > 2*numServer)
 			removeConnection(key);
-			e.printStackTrace();
 		}
 	}
 
@@ -381,7 +334,6 @@ public class PaxosServer
 	{
 		if (!key.isValid())
 			return;
-		// -1?
 		//System.out.println("addintowritequeue " + indx + " " + command);
 		if (writeQueue.get(key) == null)
 			writeQueue.put(key, new LinkedList<String>());
@@ -467,8 +419,6 @@ public class PaxosServer
 		numServer = Integer.parseInt(args[1]);
 		numMajority = numServer / 2 + 1;
 		//System.out.println("Server No." + serverID + " launched.");
-		//for (int i = 0; i < 2*numServer + MaxClientNum + 1; ++i)
-		//	writeQueue.add(new LinkedList<String>());
 		
 		loadCheckpoint();
 
@@ -532,24 +482,20 @@ public class PaxosServer
 			{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
-				newConn.register(selector, SelectionKey.OP_READ).attach("paxos_as_server"); //(++numClient) + 2*cntNumServer);
+				newConn.register(selector, SelectionKey.OP_READ).attach("paxos_as_server"); 
 				cntNumServer++;
 			}
 			if (tag.equals("listen_client") && cntNumClient < MaxClientNum)
 	    		{
 				SocketChannel newConn = ((ServerSocketChannel)selKey.channel()).accept();
 				newConn.configureBlocking(false); 
-				newConn.register(selector, SelectionKey.OP_READ).attach("client"); //(++numClient) + 2*cntNumServer);
+				newConn.register(selector, SelectionKey.OP_READ).attach("client"); 
 				cntNumClient++;
 			}
 	    	}
 	    	if (selKey.isValid() && selKey.isReadable()) 
 		{
-			String command;
-			//if (tag.startsWith("paxos"))
-			//	command = readFromSocketChannel(selKey);
-			//else
-			command = readFromSocketChannel(selKey);
+			String command = readFromSocketChannel(selKey);
 			System.out.println("readable " + command);
 			if (command.equals(""))
 				return;
@@ -559,12 +505,10 @@ public class PaxosServer
 				int flyingInsID = Integer.parseInt(getField(command, -1));
 				//System.out.println("flying instance ID = " + flyingInsID + " " + cntInsID + " " + highestInsID + " " + stateMachine.nextProcessInsID);
 				//if (flyingInsID > cntInsID)
-				//{
 				//	System.out.println("Some One is Falling Behind!"); 
-				//}
 				if (command.startsWith("prepare"))
 				{
-					if (Math.random() < PrepareLostRate)
+					if (Math.random() < PrepareLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					int propNum = Integer.parseInt(getField(command, 1));
@@ -575,7 +519,7 @@ public class PaxosServer
 				}
 				else if (command.startsWith("re-prepare"))
 				{
-					if (Math.random() < RePrepareLostRate)
+					if (Math.random() < RePrepareLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					numPrepareResponse.put(flyingInsID, numPrepareResponse.getInt(flyingInsID) + 1);
@@ -591,20 +535,14 @@ public class PaxosServer
 						String tmp;
 						if (highestRePrepareNum.getInt(flyingInsID) == -1)
 							tmp = extendCommand(flyingInsID, "accept " + propNum + " " + getCntRequest());
-							//distinProposer.put(flyingInsID, 1);
 						else
 							tmp = extendCommand(flyingInsID, "accept " + propNum + " " + highestRePrepareValue.getStr(flyingInsID));
-							//if (getCntRequest().equals(highestRePrepareValue.getStr(flyingInsID)))
-							//	distinProposer.put(flyingInsID, 1);
-
 						broadcastToAllServers(tmp);
-						//for (int i = 1; i <= numServer; ++i)
-						//	addIntoWriteQueue(i, tmp);
 					}
 				}
 				else if (command.startsWith("accept"))
 				{
-					if (Math.random() < AcceptLostRate)
+					if (Math.random() < AcceptLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					int propNum = Integer.parseInt(getField(command, 1));
@@ -620,7 +558,7 @@ public class PaxosServer
 				}
 				else if (command.startsWith("re-accept"))
 				{
-					if (Math.random() < ReAcceptLostRate)
+					if (Math.random() < ReAcceptLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					int propNum = Integer.parseInt(getField(command, 2));
@@ -635,13 +573,11 @@ public class PaxosServer
 						numAccepted.put(flyingInsID, numAccepted.getInt(flyingInsID) + 1);
 						if (numAccepted.getInt(flyingInsID) == numMajority)
 							broadcastToAllServers(extendCommand(flyingInsID, "chosen " + getField(command, 3)));
-							//for (int i = 1; i <= numServer; ++i)
-							//	addIntoWriteQueue(i, extendCommand(flyingInsID, "chosen " + getField(command, 3)));
 					}
 				}
 				else if (command.startsWith("chosen"))
 				{
-					if (Math.random() < ChosenLostRate)
+					if (Math.random() < ChosenLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 
@@ -651,13 +587,11 @@ public class PaxosServer
 
 					if (flyingInsID > highestInsID)
 						highestInsID = flyingInsID;
-					//if (distinProposer.getInt(flyingInsID) == 1 && sentToClient.getInt(flyingInsID) == 0)
-						//sentToClient.put(flyingInsID, 1);
 					newRoundInit();
 				}
 				else if (command.startsWith("ask")) 
 				{
-					if (Math.random() < AskLostRate)
+					if (Math.random() < AskLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					int askingInsID = Integer.parseInt(getField(command, 1));
@@ -665,7 +599,7 @@ public class PaxosServer
 				}
 				else if (command.startsWith("answer"))
 				{
-					if (Math.random() < AnswerLostRate)
+					if (Math.random() < AnswerLossRate)
 						return;
 					checkIfAskMissedInstance(flyingInsID);
 					String answer = getField(command, 1);
@@ -696,27 +630,19 @@ public class PaxosServer
 			//System.out.println("writeable");
 			SocketChannel sChannel = (SocketChannel)selKey.channel();
 			writeToSocketChannel(selKey, popFromWriteQueue(selKey));
-			// care about it anyway
 			selKey.interestOps(selKey.interestOps() | SelectionKey.OP_READ);
-
-			//if (indx <= 2 * numServer) // write to another server
-			//else if (selKey.isValid()) // write to a real client 
 	    	}
 	}
 
 	public static String extendCommand(int insID, String s)
 	{
 		s = s + " " + insID + "#";
-		//int len = s.length();
-		//for (int i = 0; i < cmdLength - len; ++i)
-		//	s = s + "#";
 		System.out.println("extend command " + s);
 		return s;
 	}
 
 	public static String getField(String s, int indx)
 	{
-		//s = s.substring(0, s.indexOf('#'));
 		String[] splitted = s.split(" ");
 		if (indx == -1)
 			return splitted[splitted.length-1];
